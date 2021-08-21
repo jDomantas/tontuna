@@ -4,14 +4,16 @@ use crate::{
     Span,
 };
 
-#[derive(Debug)]
-pub(crate) struct Error {
-    pub(crate) span: Span,
-    pub(crate) message: String,
-}
+// #[derive(Debug)]
+// pub(crate) struct Error {
+//     pub(crate) span: Span,
+//     pub(crate) message: String,
+// }
+use crate::Error;
 
 type Result<T> = std::result::Result<T, Error>;
 
+#[derive(Debug, Clone, Copy)]
 struct Line<'a> {
     start_pos: Pos,
     text: &'a str,
@@ -73,7 +75,7 @@ fn find_leading_marker_test() {
 }
 
 impl<'a> Line<'a> {
-    fn new(idx: u32, text: &'a str, first_level: Marker) -> Line<'a> {
+    fn new(start_pos: Pos, text: &'a str, first_level: Marker) -> Line<'a> {
         let mut levels = 0;
         let mut trail_text = text;
         let mut level = first_level;
@@ -86,7 +88,7 @@ impl<'a> Line<'a> {
                 break;
             }
         }
-        Line { start_pos: Pos::new(idx + 1, 1), text, levels }
+        Line { start_pos, text, levels }
     }
 
     fn leading_marker(&self, level: u32) -> ast::Token {
@@ -115,25 +117,34 @@ impl<'a> Line<'a> {
         };
         (token, line)
     }
+
+    fn end(&self) -> Line<'a> {
+        Line {
+            start_pos: self.start_pos.plus_text(self.text),
+            text: "",
+            levels: 0,
+        }
+    }
 }
 
 pub(crate) fn parse(source: &str) -> Result<ast::Program> {
     let first_marker = detect_first_marker_type(source)?;
-    let lines = source
-        .lines()
-        .enumerate()
-        .map(|(idx, line)| Line::new(idx as u32, line, first_marker))
-        .collect::<Vec<_>>();
+    let mut lines = Vec::new();
+    let mut pos = Pos::START;
+    for line in source.split_inclusive('\n') {
+        lines.push(Line::new(pos, line, first_marker));
+        pos = pos.plus_text(line);
+    }
     match first_marker {
         Marker::Comment => {
-            let code = parse_code(&lines)?;
+            let code = parse_code(source, &lines)?;
             Ok(ast::Program {
                 stmts: code.stmts,
                 code_markers: Vec::new(),
             })
         }
         Marker::Code => {
-            let comment = parse_comment(&lines, Vec::new())?.elements;
+            let comment = parse_comment(source, &lines, Vec::new())?.elements;
             let mut stmts = Vec::new();
             let mut code_markers = Vec::new();
             for element in comment {
@@ -165,9 +176,10 @@ pub(crate) fn parse(source: &str) -> Result<ast::Program> {
 
 fn detect_first_marker_type(source: &str) -> Result<Marker> {
     let mut first_marker = None;
-    for (idx, line) in source.lines().enumerate() {
+    let mut pos = Pos::START;
+    for line in source.split_inclusive('\n') {
         if let Some((marker, offset)) = find_leading_marker(line) {
-            let pos = Pos::new(idx as u32 + 1, offset as u32 + 1);
+            let pos = pos.plus_text(&line[..offset]);
             match first_marker {
                 Some((first, _first_pos)) if first != marker => {
                     return Err(Error {
@@ -175,18 +187,19 @@ fn detect_first_marker_type(source: &str) -> Result<Marker> {
                         span: Span::new(pos, pos.plus_text(marker.text())),
                     });
                 }
-                Some(_) => continue,
+                Some(_) => {}
                 None => first_marker = Some((
                     marker,
                     pos,
                 )),
             }
         }
+        pos = pos.plus_text(line);
     }
     Ok(first_marker.map(|(kind, _)| kind).unwrap_or(Marker::Comment))
 }
 
-fn parse_comment(mut lines: &[Line<'_>], markers: Vec<ast::Token>) -> Result<ast::Comment> {
+fn parse_comment(source: &str, mut lines: &[Line<'_>], markers: Vec<ast::Token>) -> Result<ast::Comment> {
     let mut elements = Vec::new();
     while lines.len() > 0 {
         let first_line = &lines[0];
@@ -209,7 +222,7 @@ fn parse_comment(mut lines: &[Line<'_>], markers: Vec<ast::Token>) -> Result<ast
                 code_markers.push(marker);
                 lines = &lines[1..];
             }
-            let code = parse_code(&code_lines)?;
+            let code = parse_code(source, &code_lines)?;
             elements.push(ast::CommentElem::Code {
                 markers: code_markers,
                 code,
@@ -222,8 +235,17 @@ fn parse_comment(mut lines: &[Line<'_>], markers: Vec<ast::Token>) -> Result<ast
     })
 }
 
-fn parse_code(lines: &[Line<'_>]) -> Result<ast::NakedBlock> {
-    todo!()
+fn parse_code(src: &str, lines: &[Line<'_>]) -> Result<ast::NakedBlock> {
+    let mut parser = Parser::new(src, lines);
+    let block = parser.parse_naked_block()?;
+    if parser.peek().is_some() {
+        eprintln!("some input left");
+        match parser.parse_stmt() {
+            Ok(_) => panic!("parser didn't finish parsing"),
+            Err(e) => return Err(e),
+        }
+    }
+    Ok(block)
 }
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone, Copy)]
@@ -266,17 +288,90 @@ impl ParseHint {
     }
 }
 
-struct Parser {
+struct Parser<'a, 'src> {
     hints: Vec<ParseHint>,
+    remaining_lines: &'a [Line<'src>],
+    current_line: Line<'src>,
+    src: &'src str,
 }
 
-impl Parser {
+impl<'a, 'src> Parser<'a, 'src> {
+    fn new(src: &'src str, lines: &'a [Line<'src>]) -> Self {
+        let first_line = lines[0];
+        let mut parser = Parser {
+            hints: Vec::new(),
+            remaining_lines: &lines[1..],
+            current_line: first_line,
+            src,
+        };
+        parser.skip_whitespace();
+        parser
+    }
+
+    fn current_pos(&self) -> Pos {
+        self.current_line.start_pos
+    }
+
+    fn peek_token(&mut self) -> Option<ast::Token> {
+        loop {
+            if self.current_line.text != "" {
+                let (kind, len) = crate::lexer::next_token(&self.current_line.text).unwrap();
+                let text = &self.current_line.text[..len];
+                let end_pos = self.current_line.start_pos.plus_text(text);
+                let token = ast::Token {
+                    span: Span::new(self.current_pos(), end_pos),
+                    kind,
+                };
+                break Some(token);
+            } else if self.remaining_lines.len() > 0 {
+                self.current_line = self.remaining_lines[0];
+                self.remaining_lines = &self.remaining_lines[1..];
+            } else {
+                break None;
+            }
+        }
+    }
+
     fn peek(&mut self) -> Option<ast::TokenKind> {
-        todo!()
+        self.peek_token().map(|t| t.kind)
+    }
+
+    fn advance_raw(&mut self) -> Option<ast::Token> {
+        self.hints.clear();
+        loop {
+            if self.current_line.text != "" {
+                let (kind, len) = crate::lexer::next_token(&self.current_line.text).unwrap();
+                let text = &self.current_line.text[..len];
+                let end_pos = self.current_line.start_pos.plus_text(text);
+                let token = ast::Token {
+                    span: Span::new(self.current_pos(), end_pos),
+                    kind,
+                };
+                self.current_line.start_pos = end_pos;
+                self.current_line.text = &self.current_line.text[len..];
+                if text.trim() != "" {
+                    self.current_line.levels = 0;
+                }
+                break Some(token);
+            } else if self.remaining_lines.len() > 0 {
+                self.current_line = self.remaining_lines[0];
+                self.remaining_lines = &self.remaining_lines[1..];
+            } else {
+                break None;
+            }
+        }
+    }
+
+    fn skip_whitespace(&mut self) {
+        while matches!(self.peek(), Some(TokenKind::Space | TokenKind::Newline)) {
+            self.advance_raw();
+        }
     }
 
     fn consume(&mut self) -> Option<ast::Token> {
-        todo!()
+        let token = self.advance_raw()?;
+        self.skip_whitespace();
+        Some(token)
     }
 
     fn parse_error(&mut self) -> Error {
@@ -320,7 +415,9 @@ impl Parser {
             msg
         };
         Error {
-            span: todo!(),
+            span: self.peek_token()
+                .map(|t| t.span)
+                .unwrap_or(Span::new(self.current_pos(), self.current_pos())),
             message,
         }
     }
@@ -366,10 +463,14 @@ impl Parser {
     }
 
     fn parse_stmt(&mut self) -> Result<ast::Stmt> {
-        if let Some(if_tok) = self.check(TokenKind::If) {
+        // eprintln!("parsing stmt, next token: {:?}", self.peek());
+        if self.peek() == Some(TokenKind::LeftCurly) {
+            let block = self.parse_block()?;
+            Ok(ast::Stmt::Block(block))
+        } else if let Some(if_tok) = self.check(TokenKind::If) {
             let cond = self.parse_expr(Prec::Min)?;
             let body = self.parse_block()?;
-            let tail = (self.parse_if_tail()?);
+            let tail = self.parse_if_tail()?;
             Ok(ast::Stmt::If { if_tok, cond, body, tail })
         } else if let Some(for_tok) = self.check(TokenKind::For) {
             let name = self.expect(TokenKind::Name)?;
@@ -384,13 +485,63 @@ impl Parser {
                 body,
             })
         } else if let Some(struct_tok) = self.check(TokenKind::Struct) {
-            todo!()
+            let name = self.expect(TokenKind::Name)?;
+            let left_curly = self.expect(TokenKind::LeftCurly)?;
+            let mut fns = Vec::new();
+            loop {
+                if let Some(right_curly) = self.check(TokenKind::RightCurly) {
+                    break Ok(ast::Stmt::StructDef {
+                        struct_tok,
+                        name,
+                        left_curly,
+                        fns,
+                        right_curly,
+                    });
+                }
+                let fn_tok = self.expect(TokenKind::Fn)?;
+                fns.push(self.parse_fn_def(fn_tok)?);
+            }
+
         } else if let Some(fn_tok) = self.check(TokenKind::Fn) {
             Ok(ast::Stmt::FnDef(self.parse_fn_def(fn_tok)?))
         } else if let Some(ret) = self.check(TokenKind::Return) {
             let value = self.parse_expr(Prec::Min)?;
             let semi = self.expect(TokenKind::Semicolon)?;
             Ok(ast::Stmt::Return { ret, value, semi })
+        } else if self.peek() == Some(TokenKind::CommentMarker) {
+            if self.current_line.levels == 0 {
+                return Err(Error {
+                    span: self.peek_token().unwrap().span,
+                    message: "limitation of current implementation: comment must be at the start of a line".to_owned(),
+                });
+            }
+            let mut comment_lines = Vec::new();
+            let mut comment_markers = Vec::new();
+            let (marker, line) = self.current_line.strip_one_marker();
+            comment_lines.push(line);
+            comment_markers.push(marker);
+            self.current_line = self.current_line.end();
+            while self.remaining_lines.len() > 0 {
+                let line = self.remaining_lines[0];
+                if line.levels > 0 {
+                    let (marker, line) = line.strip_one_marker();
+                    comment_lines.push(line);
+                    comment_markers.push(marker);
+                } else {
+                    break;
+                }
+                self.current_line = line.end();
+                self.remaining_lines = &self.remaining_lines[1..];
+            }
+            let comment = parse_comment(self.src, &comment_lines, comment_markers)?;
+            self.skip_whitespace();
+            Ok(ast::Stmt::Comment(comment))
+        } else if let Some(let_tok) = self.check(TokenKind::Let) {
+            let name = self.expect(TokenKind::Name)?;
+            let eq = self.expect(TokenKind::Equals)?;
+            let value = self.parse_expr(Prec::Min)?;
+            let semi = self.expect(TokenKind::Semicolon)?;
+            Ok(ast::Stmt::Let { let_tok, name, eq, value, semi })
         } else {
             let expr = self.parse_expr(Prec::Min)?;
             let semi = self.expect(TokenKind::Semicolon)?;
@@ -521,7 +672,7 @@ impl Parser {
     }
 
     fn token_source(&self, token: ast::Token) -> &str {
-        todo!()
+        &self.src[token.span.source_range()]
     }
 }
 
@@ -563,6 +714,8 @@ fn can_start_expr(token: TokenKind) -> bool {
         TokenKind::True |
         TokenKind::False |
         TokenKind::Str |
+        TokenKind::Nil |
+        TokenKind::SelfKw |
         TokenKind::LeftParen |
         TokenKind::Name |
         TokenKind::Number => true,
@@ -581,10 +734,13 @@ fn can_start_stmt(token: TokenKind) -> bool {
         TokenKind::True |
         TokenKind::False |
         TokenKind::Str |
+        TokenKind::Nil |
+        TokenKind::SelfKw |
         TokenKind::LeftParen |
         TokenKind::LeftCurly |
         TokenKind::Name |
-        TokenKind::Number => true,
+        TokenKind::Number |
+        TokenKind::CommentMarker => true,
         _ => false,
     }
 }

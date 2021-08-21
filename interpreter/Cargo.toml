@@ -9,3 +9,5 @@ doctest = false
 [dependencies]
 logos = "0.12.0"
 anyhow = "1.0.43"
+codespan-reporting = "0.11.1"
+structopt = "0.3.22"

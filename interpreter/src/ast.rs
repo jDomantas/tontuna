@@ -27,6 +27,9 @@ pub(crate) enum Expr {
     Nil {
         tok: Token,
     },
+    SelfExpr {
+        tok: Token,
+    },
     Call {
         func: Box<Expr>,
         left_paren: Token,
@@ -79,6 +82,13 @@ pub(crate) enum Stmt {
     },
     Return {
         ret: Token,
+        value: Expr,
+        semi: Token,
+    },
+    Let {
+        let_tok: Token,
+        name: Token,
+        eq: Token,
         value: Expr,
         semi: Token,
     },

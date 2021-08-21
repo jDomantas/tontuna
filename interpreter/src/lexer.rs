@@ -30,6 +30,8 @@ pub(crate) enum TokenKind {
     Str,
     #[token("nil")]
     Nil,
+    #[token("self")]
+    SelfKw,
     #[token(".")]
     Dot,
     #[token(":")]
@@ -105,6 +107,7 @@ impl TokenKind {
             TokenKind::False => "`false`",
             TokenKind::Str => "string literal",
             TokenKind::Nil => "`nil`",
+            TokenKind::SelfKw => "`self`",
             TokenKind::Dot => "`.`",
             TokenKind::Colon => "`:`",
             TokenKind::Equals => "`=`",
