@@ -3,7 +3,9 @@
 ```rust
 struct List(T) {
     fn push(value: T);
-    fn get(index: int);
+    fn get(index: int) -> T;
+    fn remove(index: int);
+    fn len() -> int;
 }
 
 struct Comment {
