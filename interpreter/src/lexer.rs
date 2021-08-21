@@ -18,10 +18,6 @@ pub(crate) enum TokenKind {
     Return,
     #[token("struct")]
     Struct,
-    #[token("int")]
-    Int,
-    #[token("bool")]
-    Bool,
     #[token("true")]
     True,
     #[token("false")]
@@ -101,8 +97,6 @@ impl TokenKind {
             TokenKind::In => "`in`",
             TokenKind::Return => "`return`",
             TokenKind::Struct => "`struct`",
-            TokenKind::Int => "`int`",
-            TokenKind::Bool => "`bool`",
             TokenKind::True => "`true`",
             TokenKind::False => "`false`",
             TokenKind::Str => "string literal",

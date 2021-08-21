@@ -236,6 +236,9 @@ fn parse_comment(source: &str, mut lines: &[Line<'_>], markers: Vec<ast::Token>)
 }
 
 fn parse_code(src: &str, lines: &[Line<'_>]) -> Result<ast::NakedBlock> {
+    if lines.is_empty() {
+        return Ok(ast::NakedBlock { stmts: Vec::new() })
+    }
     let mut parser = Parser::new(src, lines);
     let block = parser.parse_naked_block()?;
     if parser.peek().is_some() {
@@ -463,12 +466,12 @@ impl<'a, 'src> Parser<'a, 'src> {
     }
 
     fn parse_stmt(&mut self) -> Result<ast::Stmt> {
-        // eprintln!("parsing stmt, next token: {:?}", self.peek());
+        self.hint(ParseHint::Stmt);
         if self.peek() == Some(TokenKind::LeftCurly) {
             let block = self.parse_block()?;
             Ok(ast::Stmt::Block(block))
         } else if let Some(if_tok) = self.check(TokenKind::If) {
-            let cond = self.parse_expr(Prec::Min)?;
+            let cond = self.parse_if_cond()?;
             let body = self.parse_block()?;
             let tail = self.parse_if_tail()?;
             Ok(ast::Stmt::If { if_tok, cond, body, tail })
@@ -549,10 +552,24 @@ impl<'a, 'src> Parser<'a, 'src> {
         }
     }
 
+    fn parse_if_cond(&mut self) -> Result<ast::IfCond> {
+        if let Some(let_tok) = self.check(TokenKind::Let) {
+            let name = self.expect(TokenKind::Name)?;
+            let colon = self.expect(TokenKind::Colon)?;
+            let ty = self.parse_expr(Prec::Or)?;
+            let eq = self.expect(TokenKind::Equals)?;
+            let value = self.parse_expr(Prec::Min)?;
+            Ok(ast::IfCond::TypeTest { let_tok, name, colon, ty, eq, value })
+        } else {
+            let expr = self.parse_expr(Prec::Min)?;
+            Ok(ast::IfCond::Expr(expr))
+        }
+    }
+
     fn parse_if_tail(&mut self) -> Result<ast::IfTail> {
         if let Some(else_tok) = self.check(TokenKind::Else) {
             if let Some(if_tok) = self.check(TokenKind::If) {
-                let cond = self.parse_expr(Prec::Min)?;
+                let cond = self.parse_if_cond()?;
                 let body = self.parse_block()?;
                 let tail = Box::new(self.parse_if_tail()?);
                 Ok(ast::IfTail::ElseIf { else_tok, if_tok, cond, body, tail })
@@ -658,6 +675,12 @@ impl<'a, 'src> Parser<'a, 'src> {
             Ok(ast::Expr::Bool { tok, value: true })
         } else if let Some(tok) = self.check(TokenKind::Nil) {
             Ok(ast::Expr::Nil { tok })
+        } else if let Some(tok) = self.check(TokenKind::SelfKw) {
+            Ok(ast::Expr::SelfExpr { tok })
+        } else if let Some(tok) = self.check(TokenKind::Str) {
+            let source = self.token_source(tok);
+            let value = source[1..(source.len() - 1)].to_owned();
+            Ok(ast::Expr::Str { tok, value })
         } else if let Some(left_paren) = self.check(TokenKind::LeftParen) {
             let inner = self.parse_expr(Prec::Min)?;
             let right_paren = self.expect(TokenKind::RightParen)?;

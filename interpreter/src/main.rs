@@ -23,8 +23,8 @@ fn main() {
     });
 
     match interpreter::parse(&source) {
-        Ok(ast) => {
-            eprintln!("ast: {:#?}", ast);
+        Ok(_ast) => {
+            // eprintln!("ast: {:#?}", ast);
         }
         Err(e) => {
             if print_diagnostics(

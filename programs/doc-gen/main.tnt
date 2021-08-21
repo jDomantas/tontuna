@@ -1,0 +1,47 @@
+fn main() {
+    generate_docs();
+}
+
+# Prints out markdown containing a list of every globally defined function,
+# including comments above the function if there are any.
+fn generate_docs() {
+    let source = program_code();
+    let previous_comment = nil;
+    println("---");
+    for item in source {
+        if let code: Code = item {
+            let name = get_def_name(c);
+            if name != nil {
+                println();
+                println("Function ", name);
+                if previous_comment != nil {
+                    println();
+                    println(previous_comment.whole_text());
+                }
+                println();
+                println("---");
+            }
+            previous_comment = nil;
+        } else if let comment: Comment = item {
+            previous_comment = comment;
+        } else {
+            panic("expected code or comment");
+        }
+    }
+}
+
+# Returns function name if given code is a function definition,
+# or nil otherwise.
+#
+# > let f = FnDef("foo", List(), List());
+# > print(name(f));
+# > # prints "foo"
+# > print(name(true));
+# > # prints "nil"
+fn get_def_name(code) {
+    if let fn_def: FnDef = code {
+        return fn_def.name;
+    } else {
+        return nil;
+    }
+}

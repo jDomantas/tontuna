@@ -1,0 +1,41 @@
+fn main() {
+    run_doc_tests();
+}
+
+fn run_doc_tests() {
+    # checks only top level comments
+    # code in comments must be standalone
+    let source = program_code();
+    for item in source {
+        if let comment: Comment = item {
+            for comment_item in comment.items {
+                if let code: Code = comment_item {
+                    let result = code.exec(EmptyEnv());
+                    if let err: RuntimeError = result {
+                        println("doc test failed: ", err.str());
+                    } else {
+                        panic("doc test passed");
+                    }
+                }
+            }
+        }
+    }
+}
+
+struct EmptyEnv {
+    fn is_defined(name) {
+        return nil;
+    }
+
+    fn get(name) {
+        panic("name " + name + " is not defined");
+    }
+}
+
+# let's test this!
+# > if 1 + 2 != 3 {
+# >     panic("arithmetic is broken");
+# > }
+# > if 2 < 3 {
+# >     panic("this panic is supposed to happen");
+# > }

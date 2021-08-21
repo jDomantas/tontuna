@@ -65,7 +65,7 @@ pub(crate) struct ListItem<T> {
 pub(crate) enum Stmt {
     If {
         if_tok: Token,
-        cond: Expr,
+        cond: IfCond,
         body: Block,
         tail: IfTail,
     },
@@ -105,6 +105,19 @@ pub(crate) enum Stmt {
 }
 
 #[derive(Debug, Clone)]
+pub(crate) enum IfCond {
+    Expr(Expr),
+    TypeTest {
+        let_tok: Token,
+        name: Token,
+        colon: Token,
+        ty: Expr,
+        eq: Token,
+        value: Expr,
+    },
+}
+
+#[derive(Debug, Clone)]
 pub(crate) enum IfTail {
     None,
     Else {
@@ -114,7 +127,7 @@ pub(crate) enum IfTail {
     ElseIf {
         else_tok: Token,
         if_tok: Token,
-        cond: Expr,
+        cond: IfCond,
         body: Block,
         tail: Box<IfTail>,
     },
