@@ -129,11 +129,36 @@ pub(crate) fn parse(source: &str) -> Result<ast::Program> {
             let code = parse_code(&lines)?;
             Ok(ast::Program {
                 stmts: code.stmts,
+                code_markers: Vec::new(),
             })
         }
         Marker::Code => {
             let comment = parse_comment(&lines, Vec::new())?.elements;
-            todo!()
+            let mut stmts = Vec::new();
+            let mut code_markers = Vec::new();
+            for element in comment {
+                match element {
+                    e @ ast::CommentElem::Text(_) => {
+                        match stmts.last_mut() {
+                            Some(ast::Stmt::Comment(c)) => c.elements.push(e),
+                            Some(_) | None => {
+                                stmts.push(ast::Stmt::Comment(ast::Comment {
+                                    markers: Vec::new(),
+                                    elements: vec![e],
+                                }));
+                            }
+                        }
+                    }
+                    ast::CommentElem::Code { markers, code } => {
+                        code_markers.extend(markers);
+                        stmts.extend(code.stmts);
+                    }
+                }
+            }
+            Ok(ast::Program {
+                stmts,
+                code_markers,
+            })
         }
     }
 }
@@ -201,8 +226,48 @@ fn parse_code(lines: &[Line<'_>]) -> Result<ast::NakedBlock> {
     todo!()
 }
 
-struct Parser {
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone, Copy)]
+enum ParseHint {
+    Stmt,
+    Expr,
+    Operator,
+    Token(TokenKind),
+}
 
+impl ParseHint {
+    fn covers(self, other: ParseHint) -> bool {
+        match (self, other) {
+            (ParseHint::Stmt, ParseHint::Stmt) |
+            (ParseHint::Stmt, ParseHint::Expr) => true,
+            (ParseHint::Stmt, ParseHint::Operator) => false,
+            (ParseHint::Stmt, ParseHint::Token(t)) => can_start_stmt(t),
+            (ParseHint::Expr, ParseHint::Stmt) |
+            (ParseHint::Expr, ParseHint::Operator) => false,
+            (ParseHint::Expr, ParseHint::Expr) => true,
+            (ParseHint::Expr, ParseHint::Token(t)) => can_start_expr(t),
+            (ParseHint::Operator, ParseHint::Stmt) |
+            (ParseHint::Operator, ParseHint::Expr) => false,
+            (ParseHint::Operator, ParseHint::Operator) => true,
+            (ParseHint::Operator, ParseHint::Token(t)) => is_operator(t),
+            (ParseHint::Token(_), ParseHint::Stmt) |
+            (ParseHint::Token(_), ParseHint::Expr) |
+            (ParseHint::Token(_), ParseHint::Operator) => false,
+            (ParseHint::Token(a), ParseHint::Token(b)) => a == b,
+        }
+    }
+
+    fn to_str(&self) -> &'static str {
+        match self {
+            ParseHint::Stmt => "statement",
+            ParseHint::Expr => "expression",
+            ParseHint::Operator => "operator",
+            ParseHint::Token(t) => t.to_str(),
+        }
+    }
+}
+
+struct Parser {
+    hints: Vec<ParseHint>,
 }
 
 impl Parser {
@@ -214,7 +279,58 @@ impl Parser {
         todo!()
     }
 
+    fn parse_error(&mut self) -> Error {
+        let message = if self.peek() == Some(TokenKind::Error) {
+            "bad token".to_owned()
+        } else {
+            self.hints.sort();
+            self.hints.dedup();
+            let hints = &self.hints;
+            let mut final_hints = Vec::<ParseHint>::new();
+            for &hint in &self.hints {
+                if final_hints.iter().all(|h| !h.covers(hint)) {
+                    final_hints.push(hint);
+                }
+            }
+            let expectations = final_hints.iter()
+                .map(|h| h.to_str())
+                .collect::<Vec<_>>();
+            let mut msg = String::from("expected ");
+            match expectations.as_slice() {
+                [] => panic!("no expectations"),
+                [e] => msg += e,
+                [e1, e2] => {
+                    msg += e1;
+                    msg += " or ";
+                    msg += e2;
+                }
+                [expectations @ .., last] => {
+                    for e in expectations {
+                        msg += e;
+                        msg += ", ";
+                    }
+                    msg += "or ";
+                    msg += last;
+                }
+            }
+            if let Some(token) = self.peek() {
+                msg += ", got ";
+                msg += token.to_str();
+            }
+            msg
+        };
+        Error {
+            span: todo!(),
+            message,
+        }
+    }
+
+    fn hint(&mut self, hint: ParseHint) {
+        self.hints.push(hint);
+    }
+
     fn check(&mut self, kind: TokenKind) -> Option<ast::Token> {
+        self.hint(ParseHint::Token(kind));
         if self.peek() == Some(kind) {
             self.consume()
         } else {
@@ -226,13 +342,101 @@ impl Parser {
         if let Some(tok) = self.check(kind) {
             Ok(tok)
         } else {
-            todo!("parse error");
+            Err(self.parse_error())
         }
     }
 
+    fn parse_block(&mut self) -> Result<ast::Block> {
+        let left_curly = self.expect(TokenKind::LeftCurly)?;
+        let contents = self.parse_naked_block()?;
+        let right_curly = self.expect(TokenKind::RightCurly)?;
+        Ok(ast::Block {
+            left_curly,
+            contents,
+            right_curly,
+        })
+    }
+
+    fn parse_naked_block(&mut self) -> Result<ast::NakedBlock> {
+        let mut stmts = Vec::new();
+        while self.peek().map(|t| can_start_stmt(t)).unwrap_or(false) {
+            stmts.push(self.parse_stmt()?);
+        }
+        Ok(ast::NakedBlock { stmts })
+    }
+
+    fn parse_stmt(&mut self) -> Result<ast::Stmt> {
+        if let Some(if_tok) = self.check(TokenKind::If) {
+            let cond = self.parse_expr(Prec::Min)?;
+            let body = self.parse_block()?;
+            let tail = (self.parse_if_tail()?);
+            Ok(ast::Stmt::If { if_tok, cond, body, tail })
+        } else if let Some(for_tok) = self.check(TokenKind::For) {
+            let name = self.expect(TokenKind::Name)?;
+            let in_tok = self.expect(TokenKind::In)?;
+            let iterable = self.parse_expr(Prec::Min)?;
+            let body = self.parse_block()?;
+            Ok(ast::Stmt::For {
+                for_tok,
+                name,
+                in_tok,
+                iterable,
+                body,
+            })
+        } else if let Some(struct_tok) = self.check(TokenKind::Struct) {
+            todo!()
+        } else if let Some(fn_tok) = self.check(TokenKind::Fn) {
+            Ok(ast::Stmt::FnDef(self.parse_fn_def(fn_tok)?))
+        } else if let Some(ret) = self.check(TokenKind::Return) {
+            let value = self.parse_expr(Prec::Min)?;
+            let semi = self.expect(TokenKind::Semicolon)?;
+            Ok(ast::Stmt::Return { ret, value, semi })
+        } else {
+            let expr = self.parse_expr(Prec::Min)?;
+            let semi = self.expect(TokenKind::Semicolon)?;
+            Ok(ast::Stmt::Expr { expr, semi })
+        }
+    }
+
+    fn parse_if_tail(&mut self) -> Result<ast::IfTail> {
+        if let Some(else_tok) = self.check(TokenKind::Else) {
+            if let Some(if_tok) = self.check(TokenKind::If) {
+                let cond = self.parse_expr(Prec::Min)?;
+                let body = self.parse_block()?;
+                let tail = Box::new(self.parse_if_tail()?);
+                Ok(ast::IfTail::ElseIf { else_tok, if_tok, cond, body, tail })
+            } else {
+                let body = self.parse_block()?;
+                Ok(ast::IfTail::Else { else_tok, body })
+            }
+        } else {
+            Ok(ast::IfTail::None)
+        }
+    }
+
+    fn parse_fn_def(&mut self, fn_tok: ast::Token) -> Result<ast::FnDef> {
+        let name = self.expect(TokenKind::Name)?;
+        let left_paren = self.expect(TokenKind::LeftParen)?;
+        let params = self.parse_list(|p| p.expect(TokenKind::Name))?;
+        let right_paren = self.expect(TokenKind::RightParen)?;
+        let body = self.parse_block()?;
+        Ok(ast::FnDef {
+            fn_tok,
+            name,
+            left_paren,
+            params,
+            right_paren,
+            body,
+        })
+    }
+
     fn parse_expr(&mut self, min_prec: Prec) -> Result<ast::Expr> {
+        self.hint(ParseHint::Expr);
         let mut expr = self.parse_atom_expr()?;
         while let Some(kind) = self.peek() {
+            self.hint(ParseHint::Operator);
+            self.hint(ParseHint::Token(TokenKind::Dot));
+            self.hint(ParseHint::Token(TokenKind::LeftParen));
             match binop_prec(kind) {
                 Some((prec, rhs_prec)) if prec >= min_prec => {
                     let operator = self.expect(kind).unwrap();
@@ -301,6 +505,8 @@ impl Parser {
             Ok(ast::Expr::Bool { tok, value: false })
         } else if let Some(tok) = self.check(TokenKind::True) {
             Ok(ast::Expr::Bool { tok, value: true })
+        } else if let Some(tok) = self.check(TokenKind::Nil) {
+            Ok(ast::Expr::Nil { tok })
         } else if let Some(left_paren) = self.check(TokenKind::LeftParen) {
             let inner = self.parse_expr(Prec::Min)?;
             let right_paren = self.expect(TokenKind::RightParen)?;
@@ -310,7 +516,7 @@ impl Parser {
                 right_paren,
             })
         } else {
-            todo!("parse error")
+            Err(self.parse_error())
         }
     }
 
@@ -349,5 +555,55 @@ fn binop_prec(token: TokenKind) -> Option<(Prec, Prec)> {
         TokenKind::Star |
         TokenKind::Slash => Some((Prec::MulDiv, Prec::Atom)),
         _ => None,
+    }
+}
+
+fn can_start_expr(token: TokenKind) -> bool {
+    match token {
+        TokenKind::True |
+        TokenKind::False |
+        TokenKind::Str |
+        TokenKind::LeftParen |
+        TokenKind::Name |
+        TokenKind::Number => true,
+        _ => false,
+    }
+}
+
+fn can_start_stmt(token: TokenKind) -> bool {
+    match token {
+        TokenKind::Fn |
+        TokenKind::Let |
+        TokenKind::If |
+        TokenKind::For |
+        TokenKind::Return |
+        TokenKind::Struct |
+        TokenKind::True |
+        TokenKind::False |
+        TokenKind::Str |
+        TokenKind::LeftParen |
+        TokenKind::LeftCurly |
+        TokenKind::Name |
+        TokenKind::Number => true,
+        _ => false,
+    }
+}
+
+fn is_operator(token: TokenKind) -> bool {
+    match token {
+        TokenKind::Equals |
+        TokenKind::And |
+        TokenKind::Or |
+        TokenKind::Plus |
+        TokenKind::Minus |
+        TokenKind::Star |
+        TokenKind::Slash |
+        TokenKind::Less |
+        TokenKind::LessEq |
+        TokenKind::Greater |
+        TokenKind::GreaterEq |
+        TokenKind::EqEq |
+        TokenKind::NotEq => true,
+        _ => false,
     }
 }

@@ -26,8 +26,10 @@ pub(crate) enum TokenKind {
     True,
     #[token("false")]
     False,
-    #[token("str")]
+    #[regex("\"[^\\n\"]*\"")]
     Str,
+    #[token("nil")]
+    Nil,
     #[token(".")]
     Dot,
     #[token(":")]
@@ -62,6 +64,10 @@ pub(crate) enum TokenKind {
     LeftParen,
     #[token(")")]
     RightParen,
+    #[token("{")]
+    LeftCurly,
+    #[token("}")]
+    RightCurly,
     #[token(",")]
     Comma,
     #[token(";")]
@@ -80,6 +86,56 @@ pub(crate) enum TokenKind {
     #[error]
     Error,
     CommentText,
+}
+
+impl TokenKind {
+    pub(crate) fn to_str(self) -> &'static str {
+        match self {
+            TokenKind::Fn => "`fn`",
+            TokenKind::Let => "`let`",
+            TokenKind::If => "`if`",
+            TokenKind::Else => "`else`",
+            TokenKind::For => "`for`",
+            TokenKind::In => "`in`",
+            TokenKind::Return => "`return`",
+            TokenKind::Struct => "`struct`",
+            TokenKind::Int => "`int`",
+            TokenKind::Bool => "`bool`",
+            TokenKind::True => "`true`",
+            TokenKind::False => "`false`",
+            TokenKind::Str => "string literal",
+            TokenKind::Nil => "`nil`",
+            TokenKind::Dot => "`.`",
+            TokenKind::Colon => "`:`",
+            TokenKind::Equals => "`=`",
+            TokenKind::And => "`&&`",
+            TokenKind::Or => "`||`",
+            TokenKind::Plus => "`+`",
+            TokenKind::Minus => "`-`",
+            TokenKind::Star => "`*`",
+            TokenKind::Slash => "`/`",
+            TokenKind::Less => "`<`",
+            TokenKind::LessEq => "`<=`",
+            TokenKind::Greater => "`>`",
+            TokenKind::GreaterEq => "`>=`",
+            TokenKind::EqEq => "`==`",
+            TokenKind::NotEq => "`!=`",
+            TokenKind::LeftParen => "`(`",
+            TokenKind::RightParen => "`)`",
+            TokenKind::LeftCurly => "`{`",
+            TokenKind::RightCurly => "`}`",
+            TokenKind::Comma => "`,`",
+            TokenKind::Semicolon => "`;`",
+            TokenKind::Name => "identifier",
+            TokenKind::Number => "number",
+            TokenKind::CommentMarker => "`#`",
+            TokenKind::CodeMarker => "`>`",
+            TokenKind::Space => "whitespace",
+            TokenKind::Newline => "whitespace",
+            TokenKind::Error => "bad token",
+            TokenKind::CommentText => "comment text",
+        }
+    }
 }
 
 pub(crate) fn next_token(source: &str) -> Option<(TokenKind, usize)> {

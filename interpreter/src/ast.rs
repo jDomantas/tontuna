@@ -4,6 +4,7 @@ pub(crate) use crate::lexer::TokenKind;
 #[derive(Debug, Clone)]
 pub(crate) struct Program {
     pub(crate) stmts: Vec<Stmt>,
+    pub(crate) code_markers: Vec<Token>,
 }
 
 #[derive(Debug, Clone)]
@@ -22,6 +23,9 @@ pub(crate) enum Expr {
     Str {
         tok: Token,
         value: String,
+    },
+    Nil {
+        tok: Token,
     },
     Call {
         func: Box<Expr>,
@@ -57,8 +61,10 @@ pub(crate) struct ListItem<T> {
 #[derive(Debug, Clone)]
 pub(crate) enum Stmt {
     If {
+        if_tok: Token,
         cond: Expr,
         body: Block,
+        tail: IfTail,
     },
     Expr {
         expr: Expr,
@@ -84,6 +90,23 @@ pub(crate) enum Stmt {
         left_curly: Token,
         fns: Vec<FnDef>,
         right_curly: Token,
+    },
+    Block(Block),
+}
+
+#[derive(Debug, Clone)]
+pub(crate) enum IfTail {
+    None,
+    Else {
+        else_tok: Token,
+        body: Block,
+    },
+    ElseIf {
+        else_tok: Token,
+        if_tok: Token,
+        cond: Expr,
+        body: Block,
+        tail: Box<IfTail>,
     },
 }
 
