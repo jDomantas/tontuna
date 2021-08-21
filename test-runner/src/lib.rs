@@ -3,7 +3,7 @@
 fn check_program(path: &str) {
     let source = std::fs::read_to_string(path)
         .expect(&format!("failed to read {:?}", path));
-    match interpreter::parse(&source) {
+    match tontuna::parse(&source) {
         Ok(_ast) => {}
         Err(_e) => panic!("file {:?} contains parse errors", path),
     }

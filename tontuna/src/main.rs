@@ -22,7 +22,7 @@ fn main() {
         std::process::exit(1);
     });
 
-    match interpreter::parse(&source) {
+    match tontuna::parse(&source) {
         Ok(_ast) => {
             // eprintln!("ast: {:#?}", ast);
         }
@@ -47,7 +47,7 @@ fn main() {
 fn print_diagnostics(
     file: &str,
     source: &str,
-    diagnostics: impl Iterator<Item = interpreter::Error>,
+    diagnostics: impl Iterator<Item = tontuna::Error>,
 ) -> anyhow::Result<()> {
     let stream = cr::term::termcolor::StandardStream::stderr(cr::term::termcolor::ColorChoice::Auto);
     let mut stream = stream.lock();
