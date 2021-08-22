@@ -25,6 +25,8 @@ fn compare(lhs: &Value, rhs: &Value) -> Option<Ordering> {
         (Value::UserFunc(a), Value::UserFunc(b)) => Rc::ptr_eq(a, b).then(|| Ordering::Equal),
         (Value::UserFunc(_), _) | (_, Value::UserFunc(_)) => None,
         (Value::Stmt(a), Value::Stmt(b)) => Rc::ptr_eq(a, b).then(|| Ordering::Equal),
+        (Value::Stmt(_), _) | (_, Value::Stmt(_)) => None,
+        (Value::Interpreter(a), Value::Interpreter(b)) => Rc::ptr_eq(a, b).then(|| Ordering::Equal),
     }
 }
 
@@ -86,16 +88,21 @@ pub(super) fn print(values: &[Value], output: &mut dyn Write) -> Result<(), Stri
     for value in values {
         do_write(output, value.stringify().as_bytes())?;
     }
-    Ok(())
+    do_flush(output)
 }
 
 pub(super) fn println(values: &[Value], output: &mut dyn Write) -> Result<(), String> {
     print(values, output)?;
-    do_write(output, b"\n")
+    do_write(output, b"\n")?;
+    do_flush(output)
 }
 
 fn do_write(output: &mut dyn Write, bytes: &[u8]) -> Result<(), String> {
     output.write_all(bytes).map_err(|_| "io error".to_owned())
+}
+
+fn do_flush(output: &mut dyn Write) -> Result<(), String> {
+    output.flush().map_err(|_| "io error".to_owned())
 }
 
 pub(super) fn substring(s: &Value, start: &Value, len: &Value) -> Result<Value, String> {
@@ -272,4 +279,39 @@ pub(super) fn stmt_children(stmt: &super::Stmt) -> Value {
             })))
             .collect(),
     )))
+}
+
+pub(super) fn interpreter_run(inp: &Value, stmt: &Value) -> Result<Value, String> {
+    let i = match inp {
+        Value::Interpreter(inp) => inp,
+        other => return Err(format!(
+            "first argument must be Interpreter but was {}",
+            other.type_name(),
+        )),
+    };
+    let s = match stmt {
+        Value::Stmt(stmt) => stmt,
+        other => return Err(format!(
+            "second argument must be Comment or Code but was {}",
+            other.type_name(),
+        )),
+    };
+    let env = i.env.borrow().clone();
+    match i.eval.borrow_mut().eval_statement(&s.ast, &env) {
+        Ok(new_env) => {
+            *i.env.borrow_mut() = new_env;
+            Ok(Value::Nil)
+        }
+        Err(super::EvalStop::Return(_)) => {
+            panic!("return outside of function");
+        }
+        Err(super::EvalStop::Error(err)) => {
+            let message = format!(
+                "runtime error on line {}: {}",
+                err.span.unwrap().start_line(),
+                err.message,
+            );
+            Ok(Value::Str(Rc::new(super::Str::new(&message))))
+        }
+    }
 }

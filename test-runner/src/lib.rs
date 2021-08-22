@@ -2,20 +2,6 @@
 
 use std::{cell::RefCell, collections::HashSet, io::Write, path::{Path, PathBuf}, rc::Rc};
 
-fn check_program(
-    path: &Path,
-    _stdout_path: Option<&Path>,
-    _stderr_path: Option<&Path>,
-) {
-    let source = std::fs::read_to_string(path)
-        .expect(&format!("failed to read {:?}", path));
-    let source = source.replace("\r\n", "\n");
-    match tontuna::parse(&source) {
-        Ok(_ast) => {}
-        Err(_e) => panic!("file {:?} contains parse errors", path),
-    }
-}
-
 #[test]
 fn doc_gen() {
     check_program_run(
@@ -27,7 +13,11 @@ fn doc_gen() {
 
 #[test]
 fn doc_test() {
-    check_program("../programs/doc-test/main.tnt".as_ref(), None, None);
+    check_program_run(
+        "../programs/doc-test/main.tnt".as_ref(),
+        Some("../programs/doc-test/output.txt".as_ref()),
+        None,
+    );
 }
 
 #[test]

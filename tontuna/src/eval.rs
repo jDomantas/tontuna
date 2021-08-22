@@ -3,7 +3,7 @@ mod types;
 
 use std::{cell::RefCell, collections::HashMap, io::Write, rc::Rc};
 use crate::{ast::{self, TokenKind}, Span};
-use self::types::{Instance, List, NativeFunc, Stmt, Str, Struct, UserFunc};
+use self::types::{Instance, Interpreter, List, NativeFunc, Stmt, Str, Struct, UserFunc};
 
 #[derive(Clone)]
 pub(crate) enum Value {
@@ -16,7 +16,8 @@ pub(crate) enum Value {
     Instance(Rc<Instance>),
     List(Rc<List>),
     UserFunc(Rc<UserFunc>),
-    Stmt(Rc<Stmt>)
+    Stmt(Rc<Stmt>),
+    Interpreter(Rc<Interpreter>),
 }
 
 impl From<NativeFunc> for Value {
@@ -61,7 +62,9 @@ impl Value {
             Value::Instance(i) => i.ty.name.clone(),
             Value::List(_) => "List".to_owned(),
             Value::UserFunc(_) => "Fn".to_owned(),
-            Value::Stmt(_) => "Stmt".to_owned(),
+            Value::Stmt(s) if s.is_code() => "Code".to_owned(),
+            Value::Stmt(_) => "Comment".to_owned(),
+            Value::Interpreter(_) => "Interpreter".to_owned(),
         }
     }
 
@@ -71,6 +74,7 @@ impl Value {
             Value::Instance(i) => i.lookup_field(field),
             Value::List(l) => l.lookup_field(self, field),
             Value::Stmt(s) => s.lookup_field(self, field),
+            Value::Interpreter(s) => s.lookup_field(self, field),
             _ => None,
         }
     }
@@ -82,6 +86,7 @@ impl Value {
             Value::List(_) => Err("List fields cannot be modified".to_owned()),
             Value::Stmt(s) if s.is_code() => Err("Code fields cannot be modified".to_owned()),
             Value::Stmt(s) => Err("Comment fields cannot be modified".to_owned()),
+            Value::Interpreter(_) => Err("Interpreter fields cannot be modified".to_owned()),
             _ => Err(format!("{} cannot have fields", self.type_name())),
         }
     }
@@ -99,6 +104,7 @@ impl Value {
             Value::UserFunc(f) => format!("<Fn {}>", f.name),
             Value::Stmt(s) if s.is_code() => "<Code>".to_owned(),
             Value::Stmt(_) => "<Comment>".to_owned(),
+            Value::Interpreter(_) => "<Interpreter>".to_owned(),
         }
     }
 }
@@ -216,6 +222,7 @@ struct BuiltinTypes {
     func: Rc<Struct>,
     code: Rc<Struct>,
     comment: Rc<Struct>,
+    interpreter: Rc<Struct>,
     all: Vec<Rc<Struct>>,
 }
 
@@ -249,6 +256,12 @@ impl BuiltinTypes {
             func: make_ty("Fn"),
             code: make_ty("Code"),
             comment: make_ty("Comment"),
+            interpreter: Rc::new(Struct {
+                name: "Interpreter".to_owned(),
+                ctor: Some(Rc::new(NativeFunc::new_src_hack("Interpreter", |src| {
+                    Ok(Interpreter::new(src))
+                }))),
+            }),
             all: Vec::new(),
         };
         builtins.all = vec![
@@ -261,6 +274,7 @@ impl BuiltinTypes {
             builtins.func.clone(),
             builtins.code.clone(),
             builtins.comment.clone(),
+            builtins.interpreter.clone(),
         ];
         builtins
     }
@@ -489,7 +503,7 @@ impl Evaluator {
                 match func {
                     Value::NativeFunc(f) => {
                         let args = eval_args()?;
-                        (f.f)(&args).map_err(|message| RuntimeError {
+                        (f.f)(&self.source, &args).map_err(|message| RuntimeError {
                             message,
                             span: Some(expr.span()),
                         })
@@ -497,7 +511,7 @@ impl Evaluator {
                     Value::Struct(s) => {
                         if let Some(ctor) = &s.ctor {
                             let args = eval_args()?;
-                            (ctor.f)(&args).map_err(|message| RuntimeError {
+                            (ctor.f)(&self.source, &args).map_err(|message| RuntimeError {
                                 message,
                                 span: Some(expr.span()),
                             })
@@ -668,6 +682,7 @@ impl Evaluator {
             } else {
                 self.builtins.comment.clone()
             },
+            Value::Interpreter(_) => self.builtins.interpreter.clone(),
         }
     }
 

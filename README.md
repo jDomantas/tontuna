@@ -45,9 +45,9 @@ conveniently makes demo programs small and self-contained.
 3. Comments can contain embedded code snippets (think of Rust's doc tests, but
 anywhere). The snippets are not run by default, but they must be syntactically
 correct and are available through code introspection.
-4. UNFINISHED: programs can evaluate code dynamically though an eval-like api.
-The exciting thing that is opens up is that they can run the code snippets that
-are embedded in its own comments.
+4. Programs can evaluate code dynamically though an eval-like api. The exciting
+thing that is opens up is that they can run the code snippets that are embedded
+in its own comments.
 
 
 ## Demo programs
@@ -68,7 +68,10 @@ There's three demo programs in this repo:
 
     [readme](./programs/literate/README.md)
 
-3. Unfinished: documentation tests.
+3. Documentation tests.
+
+    This program implements documentation tests (like in rust) by looking
+    through its own comments and running embedded code.
 
     [readme](./programs/doc-test/README.md)
 

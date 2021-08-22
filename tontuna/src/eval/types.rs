@@ -51,7 +51,7 @@ impl std::fmt::Display for Str {
 
 pub(crate) struct NativeFunc {
     pub(crate) name: String,
-    pub(crate) f: Box<dyn Fn(&[Value]) -> Result<Value, String>>,
+    pub(crate) f: Box<dyn Fn(&Rc<str>, &[Value]) -> Result<Value, String>>,
 }
 
 impl NativeFunc {
@@ -61,7 +61,27 @@ impl NativeFunc {
     ) -> NativeFunc {
         NativeFunc {
             name: name.into(),
-            f: Box::new(f),
+            f: Box::new(move |_, values| f(values)),
+        }
+    }
+
+    pub(crate) fn new_src_hack(
+        name: impl Into<String>,
+        f: impl Fn(Rc<str>) -> Result<Value, String> + 'static,
+    ) -> NativeFunc {
+        let name = name.into();
+        NativeFunc {
+            name: name.clone(),
+            f: Box::new(move |src, values| {
+                match values {
+                    [] => f(src.clone()),
+                    _ => Err(format!(
+                        "{} expects 0 arguments, got {}",
+                        name,
+                        values.len(),
+                    )),
+                }
+            }),
         }
     }
 
@@ -72,7 +92,7 @@ impl NativeFunc {
         let name = name.into();
         NativeFunc {
             name: name.clone(),
-            f: Box::new(move |values| {
+            f: Box::new(move |_, values| {
                 match values {
                     [single] => f(single),
                     _ => Err(format!(
@@ -92,7 +112,7 @@ impl NativeFunc {
         let name = name.into();
         NativeFunc {
             name: name.clone(),
-            f: Box::new(move |values| {
+            f: Box::new(move |_, values| {
                 match values {
                     [a, b] => f(a, b),
                     _ => Err(format!(
@@ -112,7 +132,7 @@ impl NativeFunc {
         let name = name.into();
         NativeFunc {
             name: name.clone(),
-            f: Box::new(move |values| {
+            f: Box::new(move |_, values| {
                 match values {
                     [a, b, c] => f(a, b, c),
                     _ => Err(format!(
@@ -219,6 +239,34 @@ impl Stmt {
             "children" => {
                 let as_value = as_value.clone();
                 Some(super::intrinsics::stmt_children(self))
+            }
+            _ => None,
+        }
+    }
+}
+
+pub(crate) struct Interpreter {
+    pub(crate) eval: RefCell<super::Evaluator>,
+    pub(crate) env: RefCell<Env>,
+}
+
+impl Interpreter {
+    pub(crate) fn new(src: Rc<str>) -> Value {
+        let eval = super::Evaluator::new(src, None, Box::new(std::io::sink()));
+        let env = eval.globals.clone();
+        Value::Interpreter(Rc::new(Interpreter {
+            eval: RefCell::new(eval),
+            env: RefCell::new(env),
+        }))
+    }
+
+    pub(crate) fn lookup_field(&self, as_value: &Value, field: &str) -> Option<Value> {
+        match field {
+            "run" => {
+                let as_value = as_value.clone();
+                Some(Value::NativeFunc(Rc::new(NativeFunc::new1("run", move |val| {
+                    super::intrinsics::interpreter_run(&as_value, val)
+                }))))
             }
             _ => None,
         }
