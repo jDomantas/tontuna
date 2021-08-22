@@ -9,6 +9,10 @@ pub(crate) struct Str {
 }
 
 impl Str {
+    pub(crate) fn new(s: &str) -> Self {
+        Str { chars: s.chars().collect() }
+    }
+
     fn encode(&self) -> String {
         self.chars.iter().copied().collect()
     }
@@ -168,6 +172,42 @@ impl List {
                 Some(Value::NativeFunc(Rc::new(NativeFunc::new1("get", move |idx| {
                     super::intrinsics::list_get(&as_value, idx)
                 }))))
+            }
+            _ => None,
+        }
+    }
+}
+
+pub(crate) struct Stmt {
+    pub(crate) source: Rc<str>,
+    pub(crate) ast: Rc<ast::Stmt>,
+}
+
+impl Stmt {
+    pub(crate) fn is_code(&self) -> bool {
+        match *self.ast {
+            ast::Stmt::If { .. } |
+            ast::Stmt::Expr { .. } |
+            ast::Stmt::For { .. } |
+            ast::Stmt::Return { .. } |
+            ast::Stmt::Let { .. } |
+            ast::Stmt::FnDef(_) |
+            ast::Stmt::StructDef { .. } |
+            ast::Stmt::Block(_) => true,
+            ast::Stmt::Comment(_) => false,
+        }
+    }
+
+    pub(crate) fn lookup_field(&self, as_value: &Value, field: &str) -> Option<Value> {
+        match field {
+            "text" => {
+                let span = self.ast.span();
+                let text = &self.source[span.source_range()];
+                Some(Value::Str(Rc::new(Str::new(text))))
+            }
+            "children" => {
+                let as_value = as_value.clone();
+                Some(super::intrinsics::stmt_children(self))
             }
             _ => None,
         }

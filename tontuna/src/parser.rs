@@ -15,6 +15,22 @@ use crate::Error;
 
 type Result<T> = std::result::Result<T, Error>;
 
+trait NakedBlockExt {
+    fn consume_stmts(self) -> Vec<ast::Stmt>;
+}
+
+impl NakedBlockExt for ast::NakedBlock {
+    fn consume_stmts(self) -> Vec<ast::Stmt> {
+        self.stmts
+            .into_iter()
+            .map(|s| match Rc::try_unwrap(s) {
+                Ok(s) => s,
+                Err(_) => panic!("statement was aliased during parsing"),
+            })
+            .collect()
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 struct Line<'a> {
     start_pos: Pos,
@@ -141,7 +157,7 @@ pub(crate) fn parse(source: &str) -> Result<ast::Program> {
         Marker::Comment => {
             let code = parse_code(source, &lines)?;
             Ok(ast::Program {
-                stmts: code.stmts,
+                code,
                 code_markers: Vec::new(),
             })
         }
@@ -164,12 +180,12 @@ pub(crate) fn parse(source: &str) -> Result<ast::Program> {
                     }
                     ast::CommentElem::Code { markers, code } => {
                         code_markers.extend(markers);
-                        stmts.extend(code.stmts);
+                        stmts.extend(code.consume_stmts());
                     }
                 }
             }
             Ok(ast::Program {
-                stmts,
+                code: ast::NakedBlock { stmts: stmts.into_iter().map(Rc::new).collect() },
                 code_markers,
             })
         }
@@ -462,7 +478,7 @@ impl<'a, 'src> Parser<'a, 'src> {
     fn parse_naked_block(&mut self) -> Result<ast::NakedBlock> {
         let mut stmts = Vec::new();
         while self.peek().map(|t| can_start_stmt(t)).unwrap_or(false) {
-            stmts.push(self.parse_stmt()?);
+            stmts.push(Rc::new(self.parse_stmt()?));
         }
         Ok(ast::NakedBlock { stmts })
     }

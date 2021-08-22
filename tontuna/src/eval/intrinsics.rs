@@ -1,6 +1,7 @@
 use std::io::Write;
 use std::rc::Rc;
 use std::cmp::Ordering;
+use crate::ast;
 use super::Value;
 
 fn compare(lhs: &Value, rhs: &Value) -> Option<Ordering> {
@@ -22,6 +23,8 @@ fn compare(lhs: &Value, rhs: &Value) -> Option<Ordering> {
         (Value::List(a), Value::List(b)) => Rc::ptr_eq(a, b).then(|| Ordering::Equal),
         (Value::List(_), _) | (_, Value::List(_)) => None,
         (Value::UserFunc(a), Value::UserFunc(b)) => Rc::ptr_eq(a, b).then(|| Ordering::Equal),
+        (Value::UserFunc(_), _) | (_, Value::UserFunc(_)) => None,
+        (Value::Stmt(a), Value::Stmt(b)) => Rc::ptr_eq(a, b).then(|| Ordering::Equal),
     }
 }
 
@@ -188,5 +191,60 @@ pub(super) fn list_get(s: &Value, idx: &Value) -> Result<Value, String> {
 pub(super) fn list_ctor(values: &[Value]) -> Value {
     Value::List(Rc::new(super::List {
         values: values.to_vec(),
+    }))
+}
+
+pub(super) fn invalid_ctor() -> String {
+    "cannot use constructor of builtin type".to_owned()
+}
+
+pub(super) fn stmt_children(stmt: &super::Stmt) -> Value {
+    let children: Vec<Rc<ast::Stmt>> = match &*stmt.ast {
+        ast::Stmt::If { if_tok, cond, body, tail } => {
+            let mut children = body.contents.stmts.clone();
+            let mut tail: &ast::IfTail = tail;
+            loop {
+                match tail {
+                    ast::IfTail::None => break,
+                    ast::IfTail::Else { body, .. } => {
+                        children.extend(body.contents.stmts.iter().cloned());
+                        break;
+                    }
+                    ast::IfTail::ElseIf { body, tail: next_tail, .. } => {
+                        children.extend(body.contents.stmts.iter().cloned());
+                        tail = &*next_tail;
+                    }
+                }
+            }
+            children
+        }
+        ast::Stmt::Expr { .. } => Vec::new(),
+        ast::Stmt::For { body, .. } => body.contents.stmts.clone(),
+        ast::Stmt::Return { .. } => Vec::new(),
+        ast::Stmt::Let { .. } => Vec::new(),
+        ast::Stmt::Comment(c) => {
+            let mut children = Vec::new();
+            for elem in &c.elements {
+                match elem {
+                    ast::CommentElem::Text(_) => {},
+                    ast::CommentElem::Code { code, .. } => {
+                        children.extend(code.stmts.iter().cloned());
+                    }
+                }
+            }
+            children
+        }
+        ast::Stmt::FnDef(f) => f.body.contents.stmts.clone(),
+        ast::Stmt::StructDef { .. } => Vec::new(),
+        ast::Stmt::Block(b) => b.contents.stmts.clone(),
+    };
+    Value::List(Rc::new(super::List {
+        values: children
+            .into_iter()
+            .map(|s| Value::Stmt(Rc::new(super::Stmt {
+                source: stmt.source.clone(),
+                ast: s.clone(),
+            })))
+            .collect(),
     }))
 }

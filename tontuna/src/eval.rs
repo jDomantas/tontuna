@@ -3,7 +3,7 @@ mod types;
 
 use std::{cell::RefCell, collections::HashMap, io::Write, rc::Rc};
 use crate::{ast::{self, TokenKind}, Span};
-use self::types::{Instance, List, NativeFunc, Str, Struct, UserFunc};
+use self::types::{Instance, List, NativeFunc, Stmt, Str, Struct, UserFunc};
 
 #[derive(Clone)]
 pub(crate) enum Value {
@@ -16,6 +16,7 @@ pub(crate) enum Value {
     Instance(Rc<Instance>),
     List(Rc<List>),
     UserFunc(Rc<UserFunc>),
+    Stmt(Rc<Stmt>)
 }
 
 impl From<NativeFunc> for Value {
@@ -44,9 +45,7 @@ impl From<Str> for Value {
 
 impl From<&str> for Value {
     fn from(v: &str) -> Value {
-        Self::Str(Rc::new(Str {
-            chars: v.chars().collect(),
-        }))
+        Self::Str(Rc::new(Str::new(v)))
     }
 }
 
@@ -62,6 +61,7 @@ impl Value {
             Value::Instance(i) => i.ty.name.clone(),
             Value::List(_) => "List".to_owned(),
             Value::UserFunc(_) => "Fn".to_owned(),
+            Value::Stmt(_) => "Stmt".to_owned(),
         }
     }
 
@@ -70,6 +70,7 @@ impl Value {
             Value::Str(s) => s.lookup_field(self, field),
             Value::Instance(i) => i.lookup_field(field),
             Value::List(l) => l.lookup_field(self, field),
+            Value::Stmt(s) => s.lookup_field(self, field),
             _ => None,
         }
     }
@@ -79,6 +80,8 @@ impl Value {
             Value::Str(_) => Err("Str fields cannot be modified".to_owned()),
             Value::Instance(i) => Ok(i.set_field(field, value)),
             Value::List(_) => Err("List fields cannot be modified".to_owned()),
+            Value::Stmt(s) if s.is_code() => Err("Code fields cannot be modified".to_owned()),
+            Value::Stmt(s) => Err("Comment fields cannot be modified".to_owned()),
             _ => Err(format!("{} cannot have fields", self.type_name())),
         }
     }
@@ -89,11 +92,13 @@ impl Value {
             Value::Int(x) => x.to_string(),
             Value::Bool(x) => x.to_string(),
             Value::Str(x) => x.to_string(),
-            Value::NativeFunc(f) => format!("<native {}>", f.name),
-            Value::Struct(s) => format!("<struct {}>", s.name),
+            Value::NativeFunc(f) => format!("<Native {}>", f.name),
+            Value::Struct(s) => format!("<Struct {}>", s.name),
             Value::Instance(i) => format!("<{}>", i.ty.name),
-            Value::List(_) => "<list>".to_owned(),
-            Value::UserFunc(f) => format!("<fn {}>", f.name),
+            Value::List(_) => "<List>".to_owned(),
+            Value::UserFunc(f) => format!("<Fn {}>", f.name),
+            Value::Stmt(s) if s.is_code() => "<Code>".to_owned(),
+            Value::Stmt(_) => "<Comment>".to_owned(),
         }
     }
 }
@@ -209,6 +214,8 @@ struct BuiltinTypes {
     list: Rc<Struct>,
     strukt: Rc<Struct>,
     func: Rc<Struct>,
+    code: Rc<Struct>,
+    comment: Rc<Struct>,
     all: Vec<Rc<Struct>>,
 }
 
@@ -217,7 +224,9 @@ impl BuiltinTypes {
         fn make_ty(name: &str) -> Rc<Struct> {
             Rc::new(Struct {
                 name: name.to_owned(),
-                ctor: None,
+                ctor: Some(Rc::new(NativeFunc::new(name, |_| {
+                    Err(intrinsics::invalid_ctor())
+                }))),
             })
         }
         let mut builtins = BuiltinTypes {
@@ -233,6 +242,8 @@ impl BuiltinTypes {
             }),
             strukt: make_ty("Struct"),
             func: make_ty("Fn"),
+            code: make_ty("Code"),
+            comment: make_ty("Comment"),
             all: Vec::new(),
         };
         builtins.all = vec![
@@ -243,20 +254,22 @@ impl BuiltinTypes {
             builtins.list.clone(),
             builtins.strukt.clone(),
             builtins.func.clone(),
+            builtins.code.clone(),
+            builtins.comment.clone(),
         ];
         builtins
     }
 }
 
 pub(crate) struct Evaluator {
-    source: String,
+    source: Rc<str>,
     globals: Env,
     call_stack_size: u64,
     builtins: BuiltinTypes,
 }
 
 impl Evaluator {
-    pub(crate) fn new(source: String, output: Box<dyn Write>) -> Evaluator {
+    pub(crate) fn new(source: Rc<str>, program: Option<&ast::Program>, output: Box<dyn Write>) -> Evaluator {
         let mut globals = HashMap::new();
         let output = Rc::new(RefCell::new(output));
         let output2 = output.clone();
@@ -274,6 +287,23 @@ impl Evaluator {
         globals.insert("panic".to_owned(), NativeFunc::new("panic", move |values| {
             Err(intrinsics::panic(values))
         }).into());
+        if let Some(program) = program {
+            let stmts = Value::List(Rc::new(List {
+                values: program.code.stmts
+                    .iter()
+                    .map(|s| Value::Stmt(Rc::new(Stmt {
+                        source: source.clone(),
+                        ast: s.clone(),
+                    })))
+                    .collect(),
+            }));
+            globals.insert("program_source".to_owned(), NativeFunc::new("program_souce", move |values| {
+                if values.len() != 0 {
+                    return Err(format!("program_source expects 0 args, got {}", values.len()));
+                }
+                Ok(stmts.clone())
+            }).into());
+        }
         let builtins = BuiltinTypes::new();
         for value in &builtins.all {
             globals.insert(value.name.clone(), Value::Struct(value.clone()));
@@ -289,8 +319,17 @@ impl Evaluator {
     fn eval_statement(&mut self, stmt: &ast::Stmt, env: &Env) -> Result<Env, EvalStop> {
         match stmt {
             ast::Stmt::If { cond, body, tail, .. } => {
-                if self.eval_if_cond(cond, env)? {
-                    self.eval_block(&body.contents, env)?;
+                let (is_true, binding) = self.eval_if_cond(cond, env)?;
+                if is_true {
+                    match binding {
+                        Some((name, value)) => {
+                            let env = env.with_fence().define(self.token_source(name), value);
+                            self.eval_block(&body.contents, &env)?;
+                        }
+                        None => {
+                            self.eval_block(&body.contents, env)?;
+                        }
+                    }
                 } else {
                     self.eval_if_tail(tail, env)?;
                 }
@@ -354,9 +393,9 @@ impl Evaluator {
         Ok(env.clone())
     }
 
-    fn eval_if_cond(&mut self, cond: &ast::IfCond, env: &Env) -> Result<bool, RuntimeError> {
+    fn eval_if_cond(&mut self, cond: &ast::IfCond, env: &Env) -> Result<(bool, Option<(ast::Token, Value)>), RuntimeError> {
         match cond {
-            ast::IfCond::Expr(e) => self.eval_cond(e, env),
+            ast::IfCond::Expr(e) => Ok((self.eval_cond(e, env)?, None)),
             ast::IfCond::TypeTest { name, ty, value, .. } => {
                 let ty_val = self.eval_expr(ty, env)?;
                 let expected = match ty_val {
@@ -370,7 +409,7 @@ impl Evaluator {
                 };
                 let value = self.eval_expr(value, env)?;
                 let value_ty = self.value_type(&value);
-                Ok(Rc::ptr_eq(&value_ty, &expected))
+                Ok((Rc::ptr_eq(&value_ty, &expected), Some((*name, value))))
             }
         }
     }
@@ -380,11 +419,21 @@ impl Evaluator {
             ast::IfTail::None => Ok(()),
             ast::IfTail::Else { body, .. } => self.eval_block(&body.contents, env),
             ast::IfTail::ElseIf { cond, body, tail, .. } => {
-                if self.eval_if_cond(cond, env)? {
-                    self.eval_block(&body.contents, env)
+                let (is_true, binding) = self.eval_if_cond(cond, env)?;
+                if is_true {
+                    match binding {
+                        Some((name, value)) => {
+                            let env = env.with_fence().define(self.token_source(name), value);
+                            self.eval_block(&body.contents, &env)?;
+                        }
+                        None => {
+                            self.eval_block(&body.contents, env)?;
+                        }
+                    }
                 } else {
-                    self.eval_if_tail(tail, env)
+                    self.eval_if_tail(tail, env)?;
                 }
+                Ok(())
             }
         }
     }
@@ -392,10 +441,11 @@ impl Evaluator {
     fn eval_expr(&mut self, expr: &ast::Expr, env: &Env) -> Result<Value, RuntimeError> {
         match expr {
             ast::Expr::Name { name } => {
-                match env.lookup(self.token_source(*name)) {
+                let text = self.token_source(*name);
+                match env.lookup(text) {
                     Some(value) => Ok(value),
                     None => Err(RuntimeError {
-                        message: "undefined variable".to_owned(),
+                        message: format!("undefined variable: {}", text),
                         span: Some(name.span),
                     }),
                 }
@@ -589,12 +639,17 @@ impl Evaluator {
             Value::Instance(i) => i.ty.clone(),
             Value::List(_) => self.builtins.list.clone(),
             Value::UserFunc(_) => self.builtins.func.clone(),
+            Value::Stmt(s) => if s.is_code() {
+                self.builtins.code.clone()
+            } else {
+                self.builtins.comment.clone()
+            },
         }
     }
 
     pub(crate) fn run_program(&mut self, program: &ast::Program) -> Result<(), RuntimeError> {
         let mut env = self.globals.clone();
-        for stmt in &program.stmts {
+        for stmt in &program.code.stmts {
             match self.eval_statement(stmt, &env) {
                 Ok(e) => env = e,
                 Err(EvalStop::Error(e)) => return Err(e),
