@@ -22,25 +22,35 @@ fn main() {
         std::process::exit(1);
     });
 
-    match tontuna::parse(&source) {
-        Ok(_ast) => {
-            // eprintln!("ast: {:#?}", ast);
-        }
+    let ast = match tontuna::parse(&source) {
+        Ok(ast) => ast,
         Err(e) => {
-            if print_diagnostics(
-                &path.to_string_lossy(),
-                &source,
-                std::iter::once(e),
-            )
-                .is_err()
-            {
-                std::process::exit(1);
-            }
+            print_diagnostic(&path.to_string_lossy(), &source, e);
+            std::process::exit(1)
         }
-    }
+    };
 
     if opt.check {
         return;
+    }
+
+    match tontuna::eval(&ast, Box::new(std::io::stdout())) {
+        Ok(()) => {}
+        Err(mut e) => {
+            e.message = format!("runtime error: {}", e.message);
+            print_diagnostic(&path.to_string_lossy(), &source, e);
+            std::process::exit(1);
+        }
+    }
+}
+
+fn print_diagnostic(
+    file: &str,
+    source: &str,
+    error: tontuna::Error,
+) {
+    if print_diagnostics(file, &source, std::iter::once(error)).is_err() {
+        std::process::exit(2);
     }
 }
 

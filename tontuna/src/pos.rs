@@ -49,6 +49,17 @@ impl Span {
         self.end
     }
 
+    pub(crate) fn merge(self, other: Span) -> Span {
+        Span {
+            start: std::cmp::min(self.start, other.start),
+            end: std::cmp::max(self.end, other.end),
+        }
+    }
+
+    pub fn start_line(self) -> u32 {
+        self.start.line
+    }
+
     pub fn source_range(self) -> std::ops::Range<usize> {
         self.start.source_pos()..self.end.source_pos()
     }

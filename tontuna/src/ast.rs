@@ -53,6 +53,23 @@ pub(crate) enum Expr {
     },
 }
 
+impl Expr {
+    pub(crate) fn span(&self) -> Span {
+        match self {
+            Expr::Name { name } => name.span,
+            Expr::Number { tok, .. } |
+            Expr::Bool { tok, .. } |
+            Expr::Str { tok, .. } |
+            Expr::Nil { tok } |
+            Expr::SelfExpr { tok } => tok.span,
+            Expr::Call { func, left_paren, args, right_paren } => func.span().merge(right_paren.span),
+            Expr::Paren { left_paren, inner, right_paren } => left_paren.span.merge(right_paren.span),
+            Expr::BinOp { lhs, operator, rhs } => lhs.span().merge(rhs.span()),
+            Expr::Field { obj, dot, field } => obj.span().merge(field.span),
+        }
+    }
+}
+
 pub(crate) type CommaList<T> = Vec<ListItem<T>>;
 
 #[derive(Debug, Clone)]
@@ -115,6 +132,15 @@ pub(crate) enum IfCond {
         eq: Token,
         value: Expr,
     },
+}
+
+impl IfCond {
+    pub(crate) fn span(&self) -> Span {
+        match self {
+            IfCond::Expr(e) => e.span(),
+            IfCond::TypeTest { let_tok, name, colon, ty, eq, value } => let_tok.span.merge(value.span()),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
