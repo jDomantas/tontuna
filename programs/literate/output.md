@@ -1,3 +1,5 @@
+# Literate mode!
+
 This is a program written in literate style.
 
 While normally we write programs as "code with added comments", Tontuna allows
@@ -15,11 +17,14 @@ For starters, we have our main function that will retrieve the code and invoke
 formatting implementation. And also print out a header because I felt like
 including something extra in here. Here you go:
 
-> fn main() {
->     println("# Literate mode!");
->     println();
->     emit_markdown(program_source());
-> }
+
+```rust
+fn main() {
+    println("# Literate mode!");
+    println();
+    emit_markdown(program_source());
+}
+```
 
 For simplicity we will have very simple and minimal formatting functionality.
 All plain text (which is really comments under the hood) will be written out as
@@ -27,22 +32,28 @@ text directly to markdown, and code will be emitted as code blocks. Here's a
 function that iterates over the elements in the source and dispatches to
 appropriate emitting functions:
 
-> fn emit_markdown(code) {
->     for item in code {
->         if let comment: Comment = item {
->             emit_comment(comment);
->         } else if let code: Code = item {
->             emit_code(code);
->         }
->     }
-> }
+
+```rust
+fn emit_markdown(code) {
+    for item in code {
+        if let comment: Comment = item {
+            emit_comment(comment);
+        } else if let code: Code = item {
+            emit_code(code);
+        }
+    }
+}
+```
 
 Now we need the two functions for formatting code and comments. For comments
 there's not much to do, we just print out the text:
 
-> fn emit_comment(comment) {
->     println(comment.text);
-> }
+
+```rust
+fn emit_comment(comment) {
+    println(comment.text);
+}
+```
 
 For code the situation is a bit more complicated. If we get the text for the
 code block every line will be prepended with ">". And of course to make our
@@ -56,50 +67,59 @@ line won't have the prefix and remain unchanged).
 Also we'll pretend that this is Rust code because the languages are
 syntactically similar enough to give us decent syntax highlighting.
 
-> fn emit_code(code) {
->     println("```rust");
->     let lines = split_lines(code.text);
->     for line in lines {
->         let stripped = strip_prefix(line, "> ");
->         println(stripped);
->     }
->     println("```");
-> }
+
+```rust
+fn emit_code(code) {
+    println("```rust");
+    let lines = split_lines(code.text);
+    for line in lines {
+        let stripped = strip_prefix(line, "> ");
+        println(stripped);
+    }
+    println("```");
+}
+```
 
 Here's the first helper function, that splits a string into separate lines:
 
-> fn split_lines(text) {
->     let lines = List();
->     let last_start = 0;
->     let idx = 0;
->     while idx < text.len {
->         if text.get(idx) == "\n" {
->             let line = text.substring(last_start, idx - last_start);
->             lines.push(line);
->             last_start = idx + 1;
->         }
->         idx = idx + 1;
->     }
->     if last_start < idx {
->         let line = text.substring(last_start, text.len - last_start);
->         lines.push(line);
->     }
->     return lines;
-> }
+
+```rust
+fn split_lines(text) {
+    let lines = List();
+    let last_start = 0;
+    let idx = 0;
+    while idx < text.len {
+        if text.get(idx) == "\n" {
+            let line = text.substring(last_start, idx - last_start);
+            lines.push(line);
+            last_start = idx + 1;
+        }
+        idx = idx + 1;
+    }
+    if last_start < idx {
+        let line = text.substring(last_start, text.len - last_start);
+        lines.push(line);
+    }
+    return lines;
+}
+```
 
 And the second one, to strip the prefix if the line starts with it:
 
-> fn strip_prefix(line, prefix) {
->     if line.len < prefix.len {
->         return line;
->     }
->     let actual_prefix = line.substring(0, prefix.len);
->     if prefix == actual_prefix {
->         return line.substring(prefix.len, line.len - prefix.len);
->     } else {
->         return line;
->     }
-> }
+
+```rust
+fn strip_prefix(line, prefix) {
+    if line.len < prefix.len {
+        return line;
+    }
+    let actual_prefix = line.substring(0, prefix.len);
+    if prefix == actual_prefix {
+        return line.substring(prefix.len, line.len - prefix.len);
+    } else {
+        return line;
+    }
+}
+```
 
 And that's it! You can run this file directly and it will print out a markdown
 version of itself. Of course, the markdown version is not runnable, but you can
@@ -108,4 +128,7 @@ monospaced wall of text.
 
 And let's not forget to actually run this:
 
-> main();
+
+```rust
+main();
+```

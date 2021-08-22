@@ -7,7 +7,6 @@ fn main() {
 fn generate_docs() {
     let source = program_source();
     let previous_comment = nil;
-    println("---");
     for item in source {
         if let code: Code = item {
             let name = get_def_name(code);

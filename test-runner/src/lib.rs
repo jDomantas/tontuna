@@ -18,7 +18,11 @@ fn check_program(
 
 #[test]
 fn doc_gen() {
-    check_program("../programs/doc-gen/main.tnt".as_ref(), None, None);
+    check_program_run(
+        "../programs/doc-gen/main.tnt".as_ref(),
+        Some("../programs/doc-gen/output.md".as_ref()),
+        None,
+    );
 }
 
 #[test]
@@ -28,7 +32,11 @@ fn doc_test() {
 
 #[test]
 fn literate() {
-    check_program("../programs/literate/main.tnt".as_ref(), None, None);
+    check_program_run(
+        "../programs/literate/main.tnt".as_ref(),
+        Some("../programs/literate/output.md".as_ref()),
+        None,
+    );
 }
 
 #[derive(Clone)]

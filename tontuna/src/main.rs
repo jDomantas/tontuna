@@ -7,6 +7,9 @@ struct Opt {
     /// Input file
     #[structopt(parse(from_os_str))]
     input: PathBuf,
+    /// Output file, prints to stdout if not specified
+    #[structopt(short, long, parse(from_os_str))]
+    output: Option<PathBuf>,
     /// Only check for parse errors
     #[structopt(short, long)]
     check: bool,
@@ -36,7 +39,22 @@ fn main() {
         return;
     }
 
-    match tontuna::eval(&ast, Box::new(std::io::stdout())) {
+    let output: Box<dyn std::io::Write> = match opt.output {
+        Some(path) => {
+            let file = match std::fs::File::create(&path) {
+                Ok(file) => file,
+                Err(e) => {
+                    eprintln!("error: cannot create {}", path.display());
+                    eprintln!("    {}", e);
+                    std::process::exit(1);
+                }
+            };
+            Box::new(file)
+        }
+        None => Box::new(std::io::stdout()),
+    };
+
+    match tontuna::eval(&ast, output) {
         Ok(()) => {}
         Err(mut e) => {
             e.message = format!("runtime error: {}", e.message);
