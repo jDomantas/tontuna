@@ -224,6 +224,9 @@ impl Evaluator {
             intrinsics::println(values, &mut **output)?;
             Ok(Value::Nil)
         }).into());
+        globals.insert("panic".to_owned(), NativeFunc::new("panic", move |values| {
+            Err(intrinsics::panic(values))
+        }).into());
         Evaluator {
             source,
             globals: Env::global(globals),
@@ -268,7 +271,16 @@ impl Evaluator {
                 };
                 return Ok(env.define(name, Value::UserFunc(Rc::new(func))));
             }
-            ast::Stmt::StructDef { name, fns, .. } => todo!(),
+            ast::Stmt::StructDef { name, fns, .. } => {
+                if fns.len() > 0 {
+                    todo!("struct with fns");
+                }
+                let name = self.token_source(*name);
+                let strukt = Struct {
+                    name: name.to_owned(),
+                };
+                return Ok(env.define(name, Value::Struct(Rc::new(strukt))));
+            }
             ast::Stmt::Block(block) => {
                 self.eval_block(&block.contents, env)?;
             }

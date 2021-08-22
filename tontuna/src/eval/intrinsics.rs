@@ -151,3 +151,14 @@ pub(super) fn string_get(s: &Value, idx: &Value) -> Result<Value, String> {
         Ok(s.into())
     }
 }
+
+pub(super) fn panic(args: &[Value]) -> String {
+    if args.len() == 0 {
+        return "panic".to_owned();
+    }
+    let mut message = "panic: ".to_owned();
+    for arg in args {
+        message.push_str(&arg.stringify());
+    }
+    message
+}
