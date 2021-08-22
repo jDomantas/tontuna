@@ -1,15 +1,21 @@
 mod intrinsics;
+mod types;
 
 use std::{cell::RefCell, collections::HashMap, io::Write, rc::Rc};
 use crate::{ast::{self, TokenKind}, Span};
+use self::types::{Instance, List, NativeFunc, Str, Struct, UserFunc};
 
 #[derive(Clone)]
 pub(crate) enum Value {
     Nil,
     Int(i64),
     Bool(bool),
-    Str(Rc<str>),
+    Str(Rc<Str>),
     NativeFunc(Rc<NativeFunc>),
+    Struct(Rc<Struct>),
+    Instance(Rc<Instance>),
+    List(Rc<List>),
+    UserFunc(Rc<UserFunc>),
 }
 
 impl From<NativeFunc> for Value {
@@ -30,9 +36,17 @@ impl From<bool> for Value {
     }
 }
 
+impl From<Str> for Value {
+    fn from(v: Str) -> Value {
+        Self::Str(v.into())
+    }
+}
+
 impl From<&str> for Value {
     fn from(v: &str) -> Value {
-        Self::Str(v.into())
+        Self::Str(Rc::new(Str {
+            chars: v.chars().collect(),
+        }))
     }
 }
 
@@ -43,26 +57,30 @@ impl Value {
             Value::Int(_) => "Int".to_owned(),
             Value::Bool(_) => "Bool".to_owned(),
             Value::Str(_) => "Str".to_owned(),
-            Value::NativeFunc(_) => "NativeFunc".to_owned(),
+            Value::NativeFunc(_) => "NativeFn".to_owned(),
+            Value::Struct(_) => "Struct".to_owned(),
+            Value::Instance(i) => i.ty.name.clone(),
+            Value::List(_) => "List".to_owned(),
+            Value::UserFunc(_) => "Fn".to_owned(),
         }
     }
 
-    fn lookup_field(&self, _field: &str) -> Option<Value> {
-        None
+    fn lookup_field(&self, field: &str) -> Option<Value> {
+        match self {
+            Value::Str(s) => match field {
+                "len" => Some(Value::Int(s.chars.len() as i64)),
+                _ => None,
+            },
+            Value::Instance(i) => i.lookup_field(field),
+            _ => None,
+        }
     }
 
     fn set_field(&self, field: &str, value: Value) -> Result<(), String> {
-        Err(format!("{} cannot have fields", self.type_name()))
-    }
-
-    fn is_callable(&self) -> bool {
-        matches!(self, Value::NativeFunc(_))
-    }
-
-    fn call(&self, args: &[Value]) -> Result<Value, String> {
         match self {
-            Value::NativeFunc(f) => (f.f)(args),
-            _ => panic!("tried to call non-callable"),
+            Value::Str(_) => Err("Str fields cannot be modified".to_owned()),
+            Value::Instance(i) => Ok(i.set_field(field, value)),
+            _ => Err(format!("{} cannot have fields", self.type_name())),
         }
     }
 
@@ -71,45 +89,12 @@ impl Value {
             Value::Nil => "nil".to_owned(),
             Value::Int(x) => x.to_string(),
             Value::Bool(x) => x.to_string(),
-            Value::Str(x) => <str as ToOwned>::to_owned(x),
-            Value::NativeFunc(f) => format!("native<{}>", f.name),
-        }
-    }
-}
-
-pub(crate) struct NativeFunc {
-    name: String,
-    f: Box<dyn Fn(&[Value]) -> Result<Value, String>>,
-}
-
-impl NativeFunc {
-    fn new(
-        name: impl Into<String>,
-        f: impl Fn(&[Value]) -> Result<Value, String> + 'static,
-    ) -> NativeFunc {
-        NativeFunc {
-            name: name.into(),
-            f: Box::new(f),
-        }
-    }
-
-    fn new1(
-        name: impl Into<String>,
-        f: impl Fn(&Value) -> Result<Value, String> + 'static,
-    ) -> NativeFunc {
-        let name = name.into();
-        NativeFunc {
-            name: name.clone(),
-            f: Box::new(move |values| {
-                match values {
-                    [single] => f(single),
-                    _ => Err(format!(
-                        "{} expects 1 argument, got {}",
-                        name,
-                        values.len(),
-                    )),
-                }
-            }),
+            Value::Str(x) => x.to_string(),
+            Value::NativeFunc(f) => format!("<native {}>", f.name),
+            Value::Struct(s) => format!("<struct {}>", s.name),
+            Value::Instance(i) => format!("<{}>", i.ty.name),
+            Value::List(_) => "<list>".to_owned(),
+            Value::UserFunc(f) => format!("<fn {}>", f.name),
         }
     }
 }
@@ -130,14 +115,14 @@ impl From<RuntimeError> for EvalStop {
     }
 }
 
-struct EnvEntry {
+pub(crate) struct EnvEntry {
     name: String,
     value: RefCell<Value>,
     next: Env,
 }
 
 #[derive(Clone)]
-enum Env {
+pub(crate) enum Env {
     Chain(Rc<EnvEntry>),
     GlobalFence(Rc<Env>),
     Global(Rc<RefCell<HashMap<String, Value>>>),
@@ -220,6 +205,7 @@ impl Env {
 pub(crate) struct Evaluator {
     source: String,
     globals: Env,
+    call_stack_size: u64,
 }
 
 impl Evaluator {
@@ -238,7 +224,11 @@ impl Evaluator {
             intrinsics::println(values, &mut **output)?;
             Ok(Value::Nil)
         }).into());
-        Evaluator { source, globals: Env::global(globals) }
+        Evaluator {
+            source,
+            globals: Env::global(globals),
+            call_stack_size: 0,
+        }
     }
 
     fn eval_statement(&mut self, stmt: &ast::Stmt, env: &Env) -> Result<Env, EvalStop> {
@@ -254,13 +244,30 @@ impl Evaluator {
                 self.eval_expr(expr, env)?;
             }
             ast::Stmt::For { name, iterable, body, .. } => todo!(),
-            ast::Stmt::Return { value, .. } => todo!(),
+            ast::Stmt::Return { ret, value, .. } => {
+                if self.call_stack_size == 0 {
+                    return Err(EvalStop::Error(RuntimeError {
+                        message: "cannot use return outside of a function".to_owned(),
+                        span: Some(ret.span),
+                    }));
+                }
+                let value = self.eval_expr(value, env)?;
+                return Err(EvalStop::Return(value));
+            }
             ast::Stmt::Let { name, value, .. } => {
                 let value = self.eval_expr(value, env)?;
                 return Ok(env.define(self.token_source(*name), value));
             }
             ast::Stmt::Comment(_) => {}
-            ast::Stmt::FnDef(_) => todo!(),
+            ast::Stmt::FnDef(def) => {
+                let name = self.token_source(def.name);
+                let func = UserFunc {
+                    name: name.to_owned(),
+                    def: def.clone(),
+                    env: env.clone(),
+                };
+                return Ok(env.define(name, Value::UserFunc(Rc::new(func))));
+            }
             ast::Stmt::StructDef { name, fns, .. } => todo!(),
             ast::Stmt::Block(block) => {
                 self.eval_block(&block.contents, env)?;
@@ -272,7 +279,16 @@ impl Evaluator {
     fn eval_if_cond(&mut self, cond: &ast::IfCond, env: &Env) -> Result<bool, RuntimeError> {
         match cond {
             ast::IfCond::Expr(e) => self.eval_cond(e, env),
-            ast::IfCond::TypeTest { name, ty, value, .. } => todo!(),
+            ast::IfCond::TypeTest { name, ty, value, .. } => {
+                let ty = self.eval_expr(ty, env)?;
+                let value = self.eval_expr(value, env)?;
+                match (ty, value) {
+                    (Value::Struct(s), Value::Instance(i)) => {
+                        Ok(Rc::ptr_eq(&i.ty, &s))
+                    }
+                    _ => Ok(false),
+                }
+            }
         }
     }
 
@@ -320,6 +336,44 @@ impl Evaluator {
                             message,
                             span: Some(expr.span()),
                         })
+                    }
+                    Value::Struct(s) => {
+                        if args.len() > 0 {
+                            return Err(RuntimeError {
+                                message: "constructors do not take arguments".to_owned(),
+                                span: Some(expr.span()),
+                            });
+                        }
+                        Ok(Value::Instance(Rc::new(Instance {
+                            ty: s.clone(),
+                            fields: Default::default(),
+                        })))
+                    }
+                    Value::UserFunc(f) => {
+                        let args = eval_args()?;
+                        let mut call_env = f.env.with_fence();
+                        if args.len() != f.def.params.len() {
+                            return Err(RuntimeError {
+                                message: format!(
+                                    "{} expects {} args, got {}",
+                                    f.name,
+                                    f.def.params.len(),
+                                    args.len()
+                                ),
+                                span: Some(expr.span()),
+                            });
+                        }
+                        for (arg, param) in args.into_iter().zip(&f.def.params) {
+                            call_env = call_env.define(self.token_source(param.item), arg);
+                        }
+                        self.call_stack_size += 1;
+                        let result = match self.eval_block(&f.def.body.contents, &call_env) {
+                            Ok(()) => Ok(Value::Nil),
+                            Err(EvalStop::Error(e)) => Err(e),
+                            Err(EvalStop::Return(val)) => Ok(val),
+                        };
+                        self.call_stack_size -= 1;
+                        result
                     }
                     other => {
                         Err(RuntimeError {
@@ -379,6 +433,27 @@ impl Evaluator {
                             obj.type_name(),
                             field_name,
                         ),
+                        span: Some(field.span),
+                    }),
+                }
+            }
+            ast::Expr::AssignVar { name, value, .. } => {
+                let value = self.eval_expr(value, env)?;
+                match env.set(self.token_source(*name), value.clone()) {
+                    Ok(()) => Ok(value),
+                    Err(()) => Err(RuntimeError {
+                        message: "undefined variable".to_owned(),
+                        span: Some(name.span),
+                    }),
+                }
+            }
+            ast::Expr::AssignField { obj, field, value, .. } => {
+                let obj = self.eval_expr(obj, env)?;
+                let value = self.eval_expr(value, env)?;
+                match obj.set_field(&self.token_source(*field), value.clone()) {
+                    Ok(()) => Ok(value),
+                    Err(message) => Err(RuntimeError {
+                        message,
                         span: Some(field.span),
                     }),
                 }

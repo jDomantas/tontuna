@@ -1,3 +1,5 @@
+use std::rc::Rc;
+
 use crate::Span;
 pub(crate) use crate::lexer::TokenKind;
 
@@ -51,6 +53,18 @@ pub(crate) enum Expr {
         dot: Token,
         field: Token,
     },
+    AssignVar {
+        name: Token,
+        eq: Token,
+        value: Box<Expr>,
+    },
+    AssignField {
+        obj: Box<Expr>,
+        dot: Token,
+        field: Token,
+        eq: Token,
+        value: Box<Expr>,
+    },
 }
 
 impl Expr {
@@ -62,10 +76,12 @@ impl Expr {
             Expr::Str { tok, .. } |
             Expr::Nil { tok } |
             Expr::SelfExpr { tok } => tok.span,
-            Expr::Call { func, left_paren, args, right_paren } => func.span().merge(right_paren.span),
-            Expr::Paren { left_paren, inner, right_paren } => left_paren.span.merge(right_paren.span),
-            Expr::BinOp { lhs, operator, rhs } => lhs.span().merge(rhs.span()),
-            Expr::Field { obj, dot, field } => obj.span().merge(field.span),
+            Expr::Call { func, right_paren, .. } => func.span().merge(right_paren.span),
+            Expr::Paren { left_paren, right_paren, .. } => left_paren.span.merge(right_paren.span),
+            Expr::BinOp { lhs, rhs, .. } => lhs.span().merge(rhs.span()),
+            Expr::Field { obj, field, .. } => obj.span().merge(field.span),
+            Expr::AssignVar { name, value, .. } => name.span.merge(value.span()),
+            Expr::AssignField { obj, value, .. } => obj.span().merge(value.span()),
         }
     }
 }
@@ -110,7 +126,7 @@ pub(crate) enum Stmt {
         semi: Token,
     },
     Comment(Comment),
-    FnDef(FnDef),
+    FnDef(Rc<FnDef>),
     StructDef {
         struct_tok: Token,
         name: Token,

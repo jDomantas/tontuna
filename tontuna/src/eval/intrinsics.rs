@@ -14,7 +14,14 @@ fn compare(lhs: &Value, rhs: &Value) -> Option<Ordering> {
         (Value::Str(a), Value::Str(b)) => Some(a.cmp(b)),
         (Value::Str(_), _) | (_, Value::Str(_)) => None,
         (Value::NativeFunc(a), Value::NativeFunc(b)) => Rc::ptr_eq(a, b).then(|| Ordering::Equal),
-        // (Value::NativeFunc(_), _) | (_, Value::NativeFunc(_)) => None,
+        (Value::NativeFunc(_), _) | (_, Value::NativeFunc(_)) => None,
+        (Value::Struct(a), Value::Struct(b)) => Rc::ptr_eq(a, b).then(|| Ordering::Equal),
+        (Value::Struct(_), _) | (_, Value::Struct(_)) => None,
+        (Value::Instance(a), Value::Instance(b)) => Rc::ptr_eq(a, b).then(|| Ordering::Equal),
+        (Value::Instance(_), _) | (_, Value::Instance(_)) => None,
+        (Value::List(a), Value::List(b)) => Rc::ptr_eq(a, b).then(|| Ordering::Equal),
+        (Value::List(_), _) | (_, Value::List(_)) => None,
+        (Value::UserFunc(a), Value::UserFunc(b)) => Rc::ptr_eq(a, b).then(|| Ordering::Equal),
     }
 }
 
@@ -86,4 +93,61 @@ pub(super) fn println(values: &[Value], output: &mut dyn Write) -> Result<(), St
 
 fn do_write(output: &mut dyn Write, bytes: &[u8]) -> Result<(), String> {
     output.write_all(bytes).map_err(|_| "io error".to_owned())
+}
+
+pub(super) fn substring(s: &Value, start: &Value, len: &Value) -> Result<Value, String> {
+    let s = match s {
+        Value::Str(s) => s,
+        other => return Err(format!(
+            "first argument must be Str but was {}",
+            other.type_name(),
+        )),
+    };
+    let start = match start {
+        Value::Int(s) => *s,
+        other => return Err(format!(
+            "second argument must be Int but was {}",
+            other.type_name(),
+        )),
+    };
+    let len = match len {
+        Value::Int(s) => *s,
+        other => return Err(format!(
+            "third argument must be Int but was {}",
+            other.type_name(),
+        )),
+    };
+    if start < 0 || len < 0 || start + len > s.chars.len() as i64 {
+        Err("index out of bounds".to_owned())
+    } else {
+        let s = super::Str {
+            chars: s.chars[start as usize..][..len as usize].to_owned(),
+        };
+        Ok(s.into())
+    }
+}
+
+pub(super) fn string_get(s: &Value, idx: &Value) -> Result<Value, String> {
+    let s = match s {
+        Value::Str(s) => s,
+        other => return Err(format!(
+            "first argument must be Str but was {}",
+            other.type_name(),
+        )),
+    };
+    let idx = match idx {
+        Value::Int(s) => *s,
+        other => return Err(format!(
+            "second argument must be Int but was {}",
+            other.type_name(),
+        )),
+    };
+    if idx < 0 || idx >= s.chars.len() as i64 {
+        Err("index out of bounds".to_owned())
+    } else {
+        let s = super::Str {
+            chars: s.chars[idx as usize..][..1].to_owned(),
+        };
+        Ok(s.into())
+    }
 }

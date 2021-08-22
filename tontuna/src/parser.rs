@@ -1,3 +1,5 @@
+use std::rc::Rc;
+
 use crate::{
     ast::{self, TokenKind},
     Pos,
@@ -506,7 +508,7 @@ impl<'a, 'src> Parser<'a, 'src> {
             }
 
         } else if let Some(fn_tok) = self.check(TokenKind::Fn) {
-            Ok(ast::Stmt::FnDef(self.parse_fn_def(fn_tok)?))
+            Ok(ast::Stmt::FnDef(Rc::new(self.parse_fn_def(fn_tok)?)))
         } else if let Some(ret) = self.check(TokenKind::Return) {
             let value = self.parse_expr(Prec::Min)?;
             let semi = self.expect(TokenKind::Semicolon)?;
@@ -609,11 +611,38 @@ impl<'a, 'src> Parser<'a, 'src> {
                 Some((prec, rhs_prec)) if prec >= min_prec => {
                     let operator = self.expect(kind).unwrap();
                     let rhs = self.parse_expr(rhs_prec)?;
-                    expr = ast::Expr::BinOp {
-                        lhs: Box::new(expr),
-                        operator,
-                        rhs: Box::new(rhs),
-                    };
+                    if kind == TokenKind::Equals {
+                        match expr {
+                            ast::Expr::Name { name } => {
+                                expr = ast::Expr::AssignVar {
+                                    name,
+                                    eq: operator,
+                                    value: Box::new(rhs),
+                                };
+                            }
+                            ast::Expr::Field { obj, dot, field } => {
+                                expr = ast::Expr::AssignField {
+                                    obj,
+                                    dot,
+                                    field,
+                                    eq: operator,
+                                    value: Box::new(rhs),
+                                };
+                            }
+                            _ => {
+                                return Err(Error {
+                                    span: expr.span(),
+                                    message: "invalid assignment target".to_owned(),
+                                });
+                            }
+                        }
+                    } else {
+                        expr = ast::Expr::BinOp {
+                            lhs: Box::new(expr),
+                            operator,
+                            rhs: Box::new(rhs),
+                        };
+                    }
                 }
                 Some(_) => break,
                 None if kind == TokenKind::Dot && Prec::CallField >= min_prec => {
@@ -727,7 +756,7 @@ fn binop_prec(token: TokenKind) -> Option<(Prec, Prec)> {
         TokenKind::Plus |
         TokenKind::Minus => Some((Prec::AddSub, Prec::MulDiv)),
         TokenKind::Star |
-        TokenKind::Slash => Some((Prec::MulDiv, Prec::Atom)),
+        TokenKind::Slash => Some((Prec::MulDiv, Prec::CallField)),
         _ => None,
     }
 }
