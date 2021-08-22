@@ -1,6 +1,0 @@
-let src = program_source();
-# hello there
-for item in src {
-    println(item);
-    println(item.text);
-}
