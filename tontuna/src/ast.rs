@@ -102,6 +102,11 @@ pub(crate) enum Stmt {
         body: Block,
         tail: IfTail,
     },
+    While {
+        while_tok: Token,
+        cond: IfCond,
+        body: Block,
+    },
     Expr {
         expr: Expr,
         semi: Token,
@@ -140,6 +145,7 @@ pub(crate) enum Stmt {
 impl Stmt {
     pub(crate) fn span(&self) -> Span {
         match self {
+            Stmt::While { while_tok, body, .. } => while_tok.span.merge(body.span()),
             Stmt::If { if_tok, body, tail, .. } => tail
                 .span()
                 .unwrap_or_else(|| body.span())

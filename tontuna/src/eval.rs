@@ -318,6 +318,24 @@ impl Evaluator {
 
     fn eval_statement(&mut self, stmt: &ast::Stmt, env: &Env) -> Result<Env, EvalStop> {
         match stmt {
+            ast::Stmt::While { cond, body, .. } => {
+                loop {
+                    let (is_true, binding) = self.eval_if_cond(cond, env)?;
+                    if is_true {
+                        match binding {
+                            Some((name, value)) => {
+                                let env = env.with_fence().define(self.token_source(name), value);
+                                self.eval_block(&body.contents, &env)?;
+                            }
+                            None => {
+                                self.eval_block(&body.contents, env)?;
+                            }
+                        }
+                    } else {
+                        break;
+                    }
+                }
+            }
             ast::Stmt::If { cond, body, tail, .. } => {
                 let (is_true, binding) = self.eval_if_cond(cond, env)?;
                 if is_true {

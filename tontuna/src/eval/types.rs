@@ -186,6 +186,7 @@ pub(crate) struct Stmt {
 impl Stmt {
     pub(crate) fn is_code(&self) -> bool {
         match *self.ast {
+            ast::Stmt::While { .. } |
             ast::Stmt::If { .. } |
             ast::Stmt::Expr { .. } |
             ast::Stmt::For { .. } |

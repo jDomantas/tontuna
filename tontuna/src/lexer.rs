@@ -6,6 +6,8 @@ pub(crate) enum TokenKind {
     Fn,
     #[token("let")]
     Let,
+    #[token("while")]
+    While,
     #[token("if")]
     If,
     #[token("else")]
@@ -91,6 +93,7 @@ impl TokenKind {
         match self {
             TokenKind::Fn => "`fn`",
             TokenKind::Let => "`let`",
+            TokenKind::While => "`while`",
             TokenKind::If => "`if`",
             TokenKind::Else => "`else`",
             TokenKind::For => "`for`",

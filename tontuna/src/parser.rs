@@ -488,6 +488,10 @@ impl<'a, 'src> Parser<'a, 'src> {
         if self.peek() == Some(TokenKind::LeftCurly) {
             let block = self.parse_block()?;
             Ok(ast::Stmt::Block(block))
+        } else if let Some(while_tok) = self.check(TokenKind::While) {
+            let cond = self.parse_if_cond()?;
+            let body = self.parse_block()?;
+            Ok(ast::Stmt::While { while_tok, cond, body })
         } else if let Some(if_tok) = self.check(TokenKind::If) {
             let cond = self.parse_if_cond()?;
             let body = self.parse_block()?;
@@ -795,6 +799,7 @@ fn can_start_stmt(token: TokenKind) -> bool {
     match token {
         TokenKind::Fn |
         TokenKind::Let |
+        TokenKind::While |
         TokenKind::If |
         TokenKind::For |
         TokenKind::Return |

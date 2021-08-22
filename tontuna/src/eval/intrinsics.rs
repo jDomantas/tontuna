@@ -200,6 +200,7 @@ pub(super) fn invalid_ctor() -> String {
 
 pub(super) fn stmt_children(stmt: &super::Stmt) -> Value {
     let children: Vec<Rc<ast::Stmt>> = match &*stmt.ast {
+        ast::Stmt::While { body, .. } => body.contents.stmts.clone(),
         ast::Stmt::If { if_tok, cond, body, tail } => {
             let mut children = body.contents.stmts.clone();
             let mut tail: &ast::IfTail = tail;
