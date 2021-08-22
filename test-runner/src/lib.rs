@@ -9,6 +9,7 @@ fn check_program(
 ) {
     let source = std::fs::read_to_string(path)
         .expect(&format!("failed to read {:?}", path));
+    let source = source.replace("\r\n", "\n");
     match tontuna::parse(&source) {
         Ok(_ast) => {}
         Err(_e) => panic!("file {:?} contains parse errors", path),
@@ -73,6 +74,7 @@ fn check_program_run(
 ) {
     let source = std::fs::read_to_string(path)
         .expect(&format!("failed to read {:?}", path));
+    let source = source.replace("\r\n", "\n");
     let stdout = match stdout_path {
         Some(path) => std::fs::read_to_string(path)
             .expect(&format!("failed to read {:?}", path))

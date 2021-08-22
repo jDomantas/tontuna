@@ -19,7 +19,7 @@ pub struct Ast {
 pub fn parse(source: &str) -> Result<Ast, Error> {
     Ok(Ast {
         source: source.into(),
-        program: crate::parser::parse(source)?,
+        program: crate::parser::parse(&source)?,
     })
 }
 
