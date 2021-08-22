@@ -12,20 +12,41 @@ version is 1.53.0.
 You can install the `tontuna` interpreter from source using cargo. This will put
 `tontuna` in your `$PATH` so you can play around with it.
 
-```
+```shell
 cargo install --path tontuna
 ```
 
 If you don't want to install the binary, you can instead run it from the repo
 using `cargo run`:
 
-```
+```shell
 cargo run -p tontuna -- args to tontuna executable
 ```
 
 `tontuna` takes one parameter - the source file to run. Programs can only print
 to stdout (or stderr by crashing with a custom error message). You can redirect
 stdout to a file by adding `--output path` parameter.
+
+Usage examples:
+
+```shell
+# invoke installed interpreter on doc-gen example
+tontuna programs/doc-gen/main.tnt
+
+# invoke installed interpreter on doc-gen example
+# and redirect output to a file
+tontuna programs/doc-gen/main.tnt --output output.md
+
+# build and invoke interpreter on doc-gen example (without installing)
+cargo run -p tontuna --release -- programs/doc-gen/main.tnt
+```
+
+If you want to hack on the interpreter, you can run all of the tests (including
+test and demo programs) with cargo:
+
+```shell
+cargo test
+```
 
 
 ## Language
