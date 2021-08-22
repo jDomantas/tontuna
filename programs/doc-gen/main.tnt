@@ -13,10 +13,10 @@ fn generate_docs() {
             let name = get_def_name(code);
             if name != nil {
                 println();
-                println("Function ", name);
+                println("### Function `", name, "`");
                 if previous_comment != nil {
                     println();
-                    println(previous_comment.text);
+                    println(remove(previous_comment.text, "#"));
                 }
                 println();
                 println("---");
@@ -33,22 +33,55 @@ fn generate_docs() {
 # Returns function name if given code is a function definition,
 # or nil otherwise.
 fn get_def_name(code) {
-    let text = code.text;
-    # println("code text: ", text);
+    let text = trim_start(code.text);
     if starts_with(text, "fn") {
-        let rest = text.substring(2, text.len - 2);
-        return rest.substring(0, 10);
+        let rest = trim_start(text.substring(2, text.len - 2));
+        return extract_identifier(rest);
     } else {
         return nil;
     }
 }
 
+# Returns the identifier a string starts with.
+# Assumes that the identifier ends with a space or parenthesis.
+fn extract_identifier(text) {
+    let idx = 0;
+    while idx < text.len && text.get(idx) != " " && text.get(idx) != "(" {
+        idx = idx + 1;
+    }
+    return text.substring(0, idx);
+}
+
+# Removes spaces from the start of the string.
+fn trim_start(text) {
+    let idx = 0;
+    while idx < text.len && text.get(idx) == " " {
+        idx = idx + 1;
+    }
+    return text.substring(idx, text.len - idx);
+}
+
+# Returns if `needle` is a prefix of `haystack`.
 fn starts_with(haystack, needle) {
     if haystack.len < needle.len {
         return false;
     }
     let start = haystack.substring(0, needle.len);
     return start == needle;
+}
+
+# Removes all occurences of a given char from a string.
+fn remove(text, to_remove) {
+    let output = "";
+    let idx = 0;
+    while idx < text.len {
+        let ch = text.get(idx);
+        if ch != to_remove {
+            output = output + ch;
+        }
+        idx = idx + 1;
+    }
+    return output;
 }
 
 main();
