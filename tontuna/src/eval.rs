@@ -67,10 +67,7 @@ impl Value {
 
     fn lookup_field(&self, field: &str) -> Option<Value> {
         match self {
-            Value::Str(s) => match field {
-                "len" => Some(Value::Int(s.chars.len() as i64)),
-                _ => None,
-            },
+            Value::Str(s) => s.lookup_field(self, field),
             Value::Instance(i) => i.lookup_field(field),
             _ => None,
         }

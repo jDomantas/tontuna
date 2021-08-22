@@ -12,6 +12,25 @@ impl Str {
     fn encode(&self) -> String {
         self.chars.iter().copied().collect()
     }
+
+    pub(crate) fn lookup_field(&self, as_value: &Value, field: &str) -> Option<Value> {
+        match field {
+            "len" => Some(Value::Int(self.chars.len() as i64)),
+            "get" => {
+                let as_value = as_value.clone();
+                Some(Value::NativeFunc(Rc::new(NativeFunc::new1("get", move |idx| {
+                    super::intrinsics::string_get(&as_value, idx)
+                }))))
+            }
+            "substring" => {
+                let as_value = as_value.clone();
+                Some(Value::NativeFunc(Rc::new(NativeFunc::new2("substring", move |idx, len| {
+                    super::intrinsics::substring(&as_value, idx, len)
+                }))))
+            }
+            _ => None,
+        }
+    }
 }
 
 impl std::fmt::Debug for Str {
