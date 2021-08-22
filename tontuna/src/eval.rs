@@ -130,80 +130,170 @@ impl From<RuntimeError> for EvalStop {
     }
 }
 
+struct EnvEntry {
+    name: String,
+    value: RefCell<Value>,
+    next: Env,
+}
+
+#[derive(Clone)]
+enum Env {
+    Chain(Rc<EnvEntry>),
+    GlobalFence(Rc<Env>),
+    Global(Rc<RefCell<HashMap<String, Value>>>),
+}
+
+impl Env {
+    fn global(globals: HashMap<String, Value>) -> Env {
+        Env::Global(Rc::new(globals.into()))
+    }
+
+    fn lookup(&self, name: &str) -> Option<Value> {
+        let mut this = self;
+        loop {
+            match this {
+                Env::Chain(entry) => {
+                    if entry.name == name {
+                        return Some(entry.value.borrow().clone());
+                    }
+                    this = &entry.next;
+                }
+                Env::GlobalFence(env) => this = env,
+                Env::Global(globals) => return globals.borrow().get(name).cloned(),
+            }
+        }
+    }
+
+    fn with_fence(&self) -> Env {
+        match self {
+            Env::Chain(_) |
+            Env::GlobalFence(_) => self.clone(),
+            Env::Global(_) => Env::GlobalFence(Rc::new(self.clone())),
+        }
+    }
+
+    fn define(&self, name: &str, value: Value) -> Env {
+        match self {
+            Env::Chain { .. } |
+            Env::GlobalFence(_) => {
+                Env::Chain(Rc::new(EnvEntry {
+                    name: name.to_owned(),
+                    value: value.into(),
+                    next: self.clone(),
+                }))
+            }
+            Env::Global(globals) => {
+                globals.borrow_mut().insert(name.to_owned(), value);
+                self.clone()
+            }
+        }
+    }
+
+    fn set(&self, name: &str, value: Value) -> Result<(), ()> {
+        let mut this = self;
+        loop {
+            match this {
+                Env::Chain(entry) => {
+                    if entry.name == name {
+                        (*entry.value.borrow_mut()) = value;
+                        return Ok(())
+                    }
+                    this = &entry.next;
+                }
+                Env::GlobalFence(env) => this = env,
+                Env::Global(globals) => {
+                    return match globals.borrow_mut().get_mut(name) {
+                        Some(v) => {
+                            *v = value;
+                            Ok(())
+                        }
+                        None => {
+                            Err(())
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 pub(crate) struct Evaluator {
     source: String,
-    env: HashMap<String, Value>,
+    globals: Env,
 }
 
 impl Evaluator {
     pub(crate) fn new(source: String, output: Box<dyn Write>) -> Evaluator {
-        let mut env = HashMap::new();
+        let mut globals = HashMap::new();
         let output = Rc::new(RefCell::new(output));
         let output2 = output.clone();
-        env.insert("print".to_owned(), NativeFunc::new("print", move |values| {
+        globals.insert("print".to_owned(), NativeFunc::new("print", move |values| {
             let mut output = output2.borrow_mut();
             intrinsics::print(values, &mut **output)?;
             Ok(Value::Nil)
         }).into());
         let output2 = output.clone();
-        env.insert("println".to_owned(), NativeFunc::new("println", move |values| {
+        globals.insert("println".to_owned(), NativeFunc::new("println", move |values| {
             let mut output = output2.borrow_mut();
             intrinsics::println(values, &mut **output)?;
             Ok(Value::Nil)
         }).into());
-        Evaluator { source, env }
+        Evaluator { source, globals: Env::global(globals) }
     }
 
-    fn eval_statement(&mut self, stmt: &ast::Stmt) -> Result<(), RuntimeError> {
+    fn eval_statement(&mut self, stmt: &ast::Stmt, env: &Env) -> Result<Env, EvalStop> {
         match stmt {
             ast::Stmt::If { cond, body, tail, .. } => {
-                if self.eval_if_cond(cond)? {
-                    self.eval_block(&body.contents)?;
+                if self.eval_if_cond(cond, env)? {
+                    self.eval_block(&body.contents, env)?;
                 } else {
-                    self.eval_if_tail(tail)?;
+                    self.eval_if_tail(tail, env)?;
                 }
             }
             ast::Stmt::Expr { expr, .. } => {
-                self.eval_expr(expr)?;
+                self.eval_expr(expr, env)?;
             }
             ast::Stmt::For { name, iterable, body, .. } => todo!(),
             ast::Stmt::Return { value, .. } => todo!(),
-            ast::Stmt::Let { name, value, .. } => todo!(),
+            ast::Stmt::Let { name, value, .. } => {
+                let value = self.eval_expr(value, env)?;
+                return Ok(env.define(self.token_source(*name), value));
+            }
             ast::Stmt::Comment(_) => {}
             ast::Stmt::FnDef(_) => todo!(),
             ast::Stmt::StructDef { name, fns, .. } => todo!(),
             ast::Stmt::Block(block) => {
-                self.eval_block(&block.contents)?;
+                self.eval_block(&block.contents, env)?;
             }
         }
-        Ok(())
+        Ok(env.clone())
     }
 
-    fn eval_if_cond(&mut self, cond: &ast::IfCond) -> Result<bool, RuntimeError> {
+    fn eval_if_cond(&mut self, cond: &ast::IfCond, env: &Env) -> Result<bool, RuntimeError> {
         match cond {
-            ast::IfCond::Expr(e) => self.eval_cond(e),
+            ast::IfCond::Expr(e) => self.eval_cond(e, env),
             ast::IfCond::TypeTest { name, ty, value, .. } => todo!(),
         }
     }
 
-    fn eval_if_tail(&mut self, tail: &ast::IfTail) -> Result<(), RuntimeError> {
+    fn eval_if_tail(&mut self, tail: &ast::IfTail, env: &Env) -> Result<(), EvalStop> {
         match tail {
             ast::IfTail::None => Ok(()),
-            ast::IfTail::Else { body, .. } => self.eval_block(&body.contents),
+            ast::IfTail::Else { body, .. } => self.eval_block(&body.contents, env),
             ast::IfTail::ElseIf { cond, body, tail, .. } => {
-                if self.eval_if_cond(cond)? {
-                    self.eval_block(&body.contents)
+                if self.eval_if_cond(cond, env)? {
+                    self.eval_block(&body.contents, env)
                 } else {
-                    self.eval_if_tail(tail)
+                    self.eval_if_tail(tail, env)
                 }
             }
         }
     }
 
-    fn eval_expr(&mut self, expr: &ast::Expr) -> Result<Value, RuntimeError> {
+    fn eval_expr(&mut self, expr: &ast::Expr, env: &Env) -> Result<Value, RuntimeError> {
         match expr {
             ast::Expr::Name { name } => {
-                match self.env.get(self.token_source(*name)).cloned() {
+                match env.lookup(self.token_source(*name)) {
                     Some(value) => Ok(value),
                     None => Err(RuntimeError {
                         message: "undefined variable".to_owned(),
@@ -217,10 +307,10 @@ impl Evaluator {
             ast::Expr::Nil { .. } => Ok(Value::Nil),
             ast::Expr::SelfExpr { tok } => todo!(),
             ast::Expr::Call { func, args, .. } => {
-                let func = self.eval_expr(func)?;
+                let func = self.eval_expr(func, env)?;
                 let mut eval_args = || -> Result<Vec<Value>, RuntimeError> {
                     args.iter()
-                        .map(|arg| self.eval_expr(&arg.item))
+                        .map(|arg| self.eval_expr(&arg.item, env))
                         .collect()
                 };
                 match func {
@@ -239,27 +329,27 @@ impl Evaluator {
                     }
                 }
             }
-            ast::Expr::Paren { inner, .. } => self.eval_expr(inner),
+            ast::Expr::Paren { inner, .. } => self.eval_expr(inner, env),
             ast::Expr::BinOp { lhs, operator, rhs } => {
                 match operator.kind {
                     TokenKind::And => {
-                        return if self.eval_cond(lhs)? {
-                            Ok(self.eval_cond(rhs)?.into())
+                        return if self.eval_cond(lhs, env)? {
+                            Ok(self.eval_cond(rhs, env)?.into())
                         } else {
                             Ok(false.into())
                         };
                     }
                     TokenKind::Or => {
-                        return if self.eval_cond(lhs)? {
+                        return if self.eval_cond(lhs, env)? {
                             Ok(true.into())
                         } else {
-                            Ok(self.eval_cond(rhs)?.into())
+                            Ok(self.eval_cond(rhs, env)?.into())
                         };
                     }
                     _ => {}
                 }
-                let lhs = self.eval_expr(lhs)?;
-                let rhs = self.eval_expr(rhs)?;
+                let lhs = self.eval_expr(lhs, env)?;
+                let rhs = self.eval_expr(rhs, env)?;
                 let result = match operator.kind {
                     TokenKind::Plus => intrinsics::add(&lhs, &rhs),
                     TokenKind::Minus => intrinsics::sub(&lhs, &rhs),
@@ -279,7 +369,7 @@ impl Evaluator {
                 })
             }
             ast::Expr::Field { obj, field, .. } => {
-                let obj = self.eval_expr(obj)?;
+                let obj = self.eval_expr(obj, env)?;
                 let field_name = self.token_source(*field);
                 match obj.lookup_field(field_name) {
                     Some(value) => Ok(value),
@@ -296,8 +386,8 @@ impl Evaluator {
         }
     }
 
-    fn eval_cond(&mut self, cond: &ast::Expr) -> Result<bool, RuntimeError> {
-        match self.eval_expr(cond)? {
+    fn eval_cond(&mut self, cond: &ast::Expr, env: &Env) -> Result<bool, RuntimeError> {
+        match self.eval_expr(cond, env)? {
             Value::Bool(b) => Ok(b),
             other => Err(RuntimeError {
                 message: format!("condition evaluated to a {}", other.type_name()),
@@ -306,9 +396,10 @@ impl Evaluator {
         }
     }
 
-    fn eval_block(&mut self, block: &ast::NakedBlock) -> Result<(), RuntimeError> {
+    fn eval_block(&mut self, block: &ast::NakedBlock, env: &Env) -> Result<(), EvalStop> {
+        let mut env = env.with_fence();
         for stmt in &block.stmts {
-            self.eval_statement(stmt)?;
+            env = self.eval_statement(stmt, &env)?;
         }
         Ok(())
     }
@@ -318,8 +409,13 @@ impl Evaluator {
     }
 
     pub(crate) fn run_program(&mut self, program: &ast::Program) -> Result<(), RuntimeError> {
+        let mut env = self.globals.clone();
         for stmt in &program.stmts {
-            self.eval_statement(stmt)?;
+            match self.eval_statement(stmt, &env) {
+                Ok(e) => env = e,
+                Err(EvalStop::Error(e)) => return Err(e),
+                Err(EvalStop::Return(_)) => panic!("return outside of function"),
+            }
         }
         Ok(())
     }
