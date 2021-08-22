@@ -160,17 +160,27 @@ impl Instance {
 
 #[derive(Default)]
 pub(crate) struct List {
-    pub(crate) values: Vec<Value>,
+    pub(crate) values: RefCell<Vec<Value>>,
 }
 
 impl List {
+    pub fn new(values: Vec<Value>) -> Self {
+        List { values: RefCell::new(values) }
+    }
+
     pub(crate) fn lookup_field(&self, as_value: &Value, field: &str) -> Option<Value> {
         match field {
-            "len" => Some(Value::Int(self.values.len() as i64)),
+            "len" => Some(Value::Int(self.values.borrow().len() as i64)),
             "get" => {
                 let as_value = as_value.clone();
                 Some(Value::NativeFunc(Rc::new(NativeFunc::new1("get", move |idx| {
                     super::intrinsics::list_get(&as_value, idx)
+                }))))
+            }
+            "push" => {
+                let as_value = as_value.clone();
+                Some(Value::NativeFunc(Rc::new(NativeFunc::new1("push", move |val| {
+                    super::intrinsics::list_push(&as_value, val)
                 }))))
             }
             _ => None,

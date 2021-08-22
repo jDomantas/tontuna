@@ -728,7 +728,10 @@ impl<'a, 'src> Parser<'a, 'src> {
             Ok(ast::Expr::SelfExpr { tok })
         } else if let Some(tok) = self.check(TokenKind::Str) {
             let source = self.token_source(tok);
-            let value = source[1..(source.len() - 1)].to_owned();
+            let value = parse_string_value(
+                tok.span.start.plus_text("\""),
+                &source[1..(source.len() - 1)],
+            )?;
             Ok(ast::Expr::Str { tok, value })
         } else if let Some(left_paren) = self.check(TokenKind::LeftParen) {
             let inner = self.parse_expr(Prec::Min)?;
@@ -746,6 +749,35 @@ impl<'a, 'src> Parser<'a, 'src> {
     fn token_source(&self, token: ast::Token) -> &str {
         &self.src[token.span.source_range()]
     }
+}
+
+fn parse_string_value(mut pos: Pos, text: &str) -> Result<String> {
+    let mut result = String::new();
+    let mut chars = text.chars();
+    while let Some(c) = chars.next() {
+        if c == '\\' {
+            let start_pos = pos;
+            pos = pos.plus_char(c);
+            let next = chars.next();
+            pos = pos.plus_char(c);
+            let escape_span = Span::new(start_pos, pos);
+            let escaped = match next {
+                Some('n') => '\n',
+                Some('r') => '\r',
+                Some('\\') => '\\',
+                Some('"') => '"',
+                _ => return Err(Error {
+                    span: escape_span,
+                    message: "invalid escape sequence".to_owned(),
+                }),
+            };
+            result.push(escaped);
+        } else {
+            result.push(c);
+            pos = pos.plus_char(c);
+        }
+    }
+    Ok(result)
 }
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]

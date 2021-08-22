@@ -181,17 +181,41 @@ pub(super) fn list_get(s: &Value, idx: &Value) -> Result<Value, String> {
             other.type_name(),
         )),
     };
-    if idx < 0 || idx >= s.values.len() as i64 {
+    if idx < 0 || idx >= s.values.borrow().len() as i64 {
         Err("index out of bounds".to_owned())
     } else {
-        Ok(s.values[idx as usize].clone())
+        Ok(s.values.borrow()[idx as usize].clone())
     }
 }
 
+pub(super) fn list_push(s: &Value, val: &Value) -> Result<Value, String> {
+    let s = match s {
+        Value::List(s) => s,
+        other => return Err(format!(
+            "first argument must be List but was {}",
+            other.type_name(),
+        )),
+    };
+    s.values.borrow_mut().push(val.clone());
+    Ok(Value::Nil)
+}
+
 pub(super) fn list_ctor(values: &[Value]) -> Value {
-    Value::List(Rc::new(super::List {
-        values: values.to_vec(),
-    }))
+    Value::List(Rc::new(super::List::new(values.to_vec())))
+}
+
+pub(super) fn str_ctor(values: &[Value]) -> Value {
+    let mut result = String::new();
+    for value in values {
+        if let Value::List(l) = value {
+            for item in &*l.values.borrow() {
+                result.push_str(&item.stringify());
+            }
+        } else {
+            result.push_str(&value.stringify());
+        }
+    }
+    Value::Str(Rc::new(super::Str::new(&result)))
 }
 
 pub(super) fn invalid_ctor() -> String {
@@ -239,13 +263,13 @@ pub(super) fn stmt_children(stmt: &super::Stmt) -> Value {
         ast::Stmt::StructDef { .. } => Vec::new(),
         ast::Stmt::Block(b) => b.contents.stmts.clone(),
     };
-    Value::List(Rc::new(super::List {
-        values: children
+    Value::List(Rc::new(super::List::new(
+        children
             .into_iter()
             .map(|s| Value::Stmt(Rc::new(super::Stmt {
                 source: stmt.source.clone(),
                 ast: s.clone(),
             })))
             .collect(),
-    }))
+    )))
 }

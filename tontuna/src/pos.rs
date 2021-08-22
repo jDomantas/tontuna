@@ -25,6 +25,11 @@ impl Pos {
         self
     }
 
+    pub(crate) fn plus_char(self, c: char) -> Pos {
+        let mut buf = [0; 4];
+        self.plus_text(c.encode_utf8(&mut buf))
+    }
+
     pub(crate) fn source_pos(self) -> usize {
         self.src_offset as usize
     }

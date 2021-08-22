@@ -24,7 +24,7 @@ pub(crate) enum TokenKind {
     True,
     #[token("false")]
     False,
-    #[regex("\"[^\\n\"]*\"")]
+    #[regex("\"([^\\n\"\\\\]|\\\\.)*\"")]
     Str,
     #[token("nil")]
     Nil,

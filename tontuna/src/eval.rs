@@ -233,7 +233,12 @@ impl BuiltinTypes {
             nil: make_ty("Nil"),
             int: make_ty("Int"),
             bool: make_ty("Bool"),
-            str: make_ty("Str"),
+            str: Rc::new(Struct {
+                name: "Str".to_owned(),
+                ctor: Some(Rc::new(NativeFunc::new("Str", |values| {
+                    Ok(intrinsics::str_ctor(values))
+                }))),
+            }),
             list: Rc::new(Struct {
                 name: "List".to_owned(),
                 ctor: Some(Rc::new(NativeFunc::new("List", |values| {
@@ -288,15 +293,15 @@ impl Evaluator {
             Err(intrinsics::panic(values))
         }).into());
         if let Some(program) = program {
-            let stmts = Value::List(Rc::new(List {
-                values: program.code.stmts
+            let stmts = Value::List(Rc::new(List::new(
+                program.code.stmts
                     .iter()
                     .map(|s| Value::Stmt(Rc::new(Stmt {
                         source: source.clone(),
                         ast: s.clone(),
                     })))
                     .collect(),
-            }));
+            )));
             globals.insert("program_source".to_owned(), NativeFunc::new("program_souce", move |values| {
                 if values.len() != 0 {
                     return Err(format!("program_source expects 0 args, got {}", values.len()));
@@ -364,7 +369,8 @@ impl Evaluator {
                         span: Some(iterable.span()),
                     })),
                 };
-                for item in &list.values {
+                let values = list.values.borrow().clone();
+                for item in &values {
                     let iter_env = env.define(self.token_source(*name), item.clone());
                     self.eval_block(&body.contents, &iter_env)?;
                 }
