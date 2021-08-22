@@ -69,6 +69,7 @@ impl Value {
         match self {
             Value::Str(s) => s.lookup_field(self, field),
             Value::Instance(i) => i.lookup_field(field),
+            Value::List(l) => l.lookup_field(self, field),
             _ => None,
         }
     }
@@ -77,6 +78,7 @@ impl Value {
         match self {
             Value::Str(_) => Err("Str fields cannot be modified".to_owned()),
             Value::Instance(i) => Ok(i.set_field(field, value)),
+            Value::List(_) => Err("List fields cannot be modified".to_owned()),
             _ => Err(format!("{} cannot have fields", self.type_name())),
         }
     }
@@ -215,6 +217,7 @@ impl BuiltinTypes {
         fn make_ty(name: &str) -> Rc<Struct> {
             Rc::new(Struct {
                 name: name.to_owned(),
+                ctor: None,
             })
         }
         let mut builtins = BuiltinTypes {
@@ -222,7 +225,12 @@ impl BuiltinTypes {
             int: make_ty("Int"),
             bool: make_ty("Bool"),
             str: make_ty("Str"),
-            list: make_ty("List"),
+            list: Rc::new(Struct {
+                name: "List".to_owned(),
+                ctor: Some(Rc::new(NativeFunc::new("List", |values| {
+                    Ok(intrinsics::list_ctor(values))
+                }))),
+            }),
             strukt: make_ty("Struct"),
             func: make_ty("Fn"),
             all: Vec::new(),
@@ -290,7 +298,20 @@ impl Evaluator {
             ast::Stmt::Expr { expr, .. } => {
                 self.eval_expr(expr, env)?;
             }
-            ast::Stmt::For { name, iterable, body, .. } => todo!(),
+            ast::Stmt::For { name, iterable, body, .. } => {
+                let iter = self.eval_expr(iterable, env)?;
+                let list = match iter {
+                    Value::List(list) => list,
+                    _ => return Err(EvalStop::Error(RuntimeError {
+                        message: format!("cannot iterate over {}", iter.type_name()),
+                        span: Some(iterable.span()),
+                    })),
+                };
+                for item in &list.values {
+                    let iter_env = env.define(self.token_source(*name), item.clone());
+                    self.eval_block(&body.contents, &iter_env)?;
+                }
+            }
             ast::Stmt::Return { ret, value, .. } => {
                 if self.call_stack_size == 0 {
                     return Err(EvalStop::Error(RuntimeError {
@@ -322,6 +343,7 @@ impl Evaluator {
                 let name = self.token_source(*name);
                 let strukt = Struct {
                     name: name.to_owned(),
+                    ctor: None,
                 };
                 return Ok(env.define(name, Value::Struct(Rc::new(strukt))));
             }
@@ -399,16 +421,28 @@ impl Evaluator {
                         })
                     }
                     Value::Struct(s) => {
-                        if args.len() > 0 {
-                            return Err(RuntimeError {
-                                message: "constructors do not take arguments".to_owned(),
+                        if let Some(ctor) = &s.ctor {
+                            let args = eval_args()?;
+                            (ctor.f)(&args).map_err(|message| RuntimeError {
+                                message,
                                 span: Some(expr.span()),
-                            });
+                            })
+                        } else {
+                            if args.len() > 0 {
+                                return Err(RuntimeError {
+                                    message: format!(
+                                        "{} expects 0 args, got {}",
+                                        s.name,
+                                        args.len(),
+                                    ),
+                                    span: Some(expr.span()),
+                                });
+                            }
+                            Ok(Value::Instance(Rc::new(Instance {
+                                ty: s.clone(),
+                                fields: Default::default(),
+                            })))
                         }
-                        Ok(Value::Instance(Rc::new(Instance {
-                            ty: s.clone(),
-                            fields: Default::default(),
-                        })))
                     }
                     Value::UserFunc(f) => {
                         let args = eval_args()?;

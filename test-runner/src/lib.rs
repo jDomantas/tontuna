@@ -86,20 +86,20 @@ fn check_program_run(
         None => "".to_owned(),
     };
     let (actual_out, actual_err) = do_run(&source);
-    if actual_out != stdout {
-        panic!(
-            "program {} gave incorrect output, expected {:?}, got {:?}",
-            path.display(),
-            stdout,
-            actual_out,
-        );
-    }
     if actual_err != stderr {
         panic!(
             "program {} gave incorrect error, expected {:?}, got {:?}",
             path.display(),
             stderr,
             actual_err,
+        );
+    }
+    if actual_out != stdout {
+        panic!(
+            "program {} gave incorrect output, expected {:?}, got {:?}",
+            path.display(),
+            stdout,
+            actual_out,
         );
     }
 }

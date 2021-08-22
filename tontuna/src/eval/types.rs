@@ -136,6 +136,7 @@ impl UserFunc {
 
 pub(crate) struct Struct {
     pub(crate) name: String,
+    pub(crate) ctor: Option<Rc<NativeFunc>>,
 }
 
 pub(crate) struct Instance {
@@ -153,4 +154,22 @@ impl Instance {
     }
 }
 
-pub(crate) struct List;
+#[derive(Default)]
+pub(crate) struct List {
+    pub(crate) values: Vec<Value>,
+}
+
+impl List {
+    pub(crate) fn lookup_field(&self, as_value: &Value, field: &str) -> Option<Value> {
+        match field {
+            "len" => Some(Value::Int(self.values.len() as i64)),
+            "get" => {
+                let as_value = as_value.clone();
+                Some(Value::NativeFunc(Rc::new(NativeFunc::new1("get", move |idx| {
+                    super::intrinsics::list_get(&as_value, idx)
+                }))))
+            }
+            _ => None,
+        }
+    }
+}

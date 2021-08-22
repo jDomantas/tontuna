@@ -162,3 +162,31 @@ pub(super) fn panic(args: &[Value]) -> String {
     }
     message
 }
+
+pub(super) fn list_get(s: &Value, idx: &Value) -> Result<Value, String> {
+    let s = match s {
+        Value::List(s) => s,
+        other => return Err(format!(
+            "first argument must be List but was {}",
+            other.type_name(),
+        )),
+    };
+    let idx = match idx {
+        Value::Int(s) => *s,
+        other => return Err(format!(
+            "second argument must be Int but was {}",
+            other.type_name(),
+        )),
+    };
+    if idx < 0 || idx >= s.values.len() as i64 {
+        Err("index out of bounds".to_owned())
+    } else {
+        Ok(s.values[idx as usize].clone())
+    }
+}
+
+pub(super) fn list_ctor(values: &[Value]) -> Value {
+    Value::List(Rc::new(super::List {
+        values: values.to_vec(),
+    }))
+}
