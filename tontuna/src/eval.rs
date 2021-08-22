@@ -199,10 +199,52 @@ impl Env {
     }
 }
 
+struct BuiltinTypes {
+    nil: Rc<Struct>,
+    int: Rc<Struct>,
+    bool: Rc<Struct>,
+    str: Rc<Struct>,
+    list: Rc<Struct>,
+    strukt: Rc<Struct>,
+    func: Rc<Struct>,
+    all: Vec<Rc<Struct>>,
+}
+
+impl BuiltinTypes {
+    fn new() -> Self {
+        fn make_ty(name: &str) -> Rc<Struct> {
+            Rc::new(Struct {
+                name: name.to_owned(),
+            })
+        }
+        let mut builtins = BuiltinTypes {
+            nil: make_ty("Nil"),
+            int: make_ty("Int"),
+            bool: make_ty("Bool"),
+            str: make_ty("Str"),
+            list: make_ty("List"),
+            strukt: make_ty("Struct"),
+            func: make_ty("Fn"),
+            all: Vec::new(),
+        };
+        builtins.all = vec![
+            builtins.nil.clone(),
+            builtins.int.clone(),
+            builtins.bool.clone(),
+            builtins.str.clone(),
+            builtins.list.clone(),
+            builtins.strukt.clone(),
+            builtins.func.clone(),
+        ];
+        builtins
+    }
+}
+
 pub(crate) struct Evaluator {
     source: String,
     globals: Env,
     call_stack_size: u64,
+    builtins: BuiltinTypes,
 }
 
 impl Evaluator {
@@ -224,10 +266,15 @@ impl Evaluator {
         globals.insert("panic".to_owned(), NativeFunc::new("panic", move |values| {
             Err(intrinsics::panic(values))
         }).into());
+        let builtins = BuiltinTypes::new();
+        for value in &builtins.all {
+            globals.insert(value.name.clone(), Value::Struct(value.clone()));
+        }
         Evaluator {
             source,
             globals: Env::global(globals),
             call_stack_size: 0,
+            builtins,
         }
     }
 
@@ -289,14 +336,19 @@ impl Evaluator {
         match cond {
             ast::IfCond::Expr(e) => self.eval_cond(e, env),
             ast::IfCond::TypeTest { name, ty, value, .. } => {
-                let ty = self.eval_expr(ty, env)?;
-                let value = self.eval_expr(value, env)?;
-                match (ty, value) {
-                    (Value::Struct(s), Value::Instance(i)) => {
-                        Ok(Rc::ptr_eq(&i.ty, &s))
+                let ty_val = self.eval_expr(ty, env)?;
+                let expected = match ty_val {
+                    Value::Struct(s) => s.clone(),
+                    _ => {
+                        return Err(RuntimeError {
+                            message: format!("type evaluated to {}", ty_val.type_name()),
+                            span: Some(ty.span()),
+                        });
                     }
-                    _ => Ok(false),
-                }
+                };
+                let value = self.eval_expr(value, env)?;
+                let value_ty = self.value_type(&value);
+                Ok(Rc::ptr_eq(&value_ty, &expected))
             }
         }
     }
@@ -490,6 +542,20 @@ impl Evaluator {
 
     fn token_source(&self, token: ast::Token) -> &str {
         &self.source[token.span.source_range()]
+    }
+
+    fn value_type(&self, value: &Value) -> Rc<Struct> {
+        match value {
+            Value::Nil => self.builtins.nil.clone(),
+            Value::Int(_) => self.builtins.int.clone(),
+            Value::Bool(_) => self.builtins.bool.clone(),
+            Value::Str(_) => self.builtins.str.clone(),
+            Value::NativeFunc(_) => self.builtins.func.clone(),
+            Value::Struct(_) => self.builtins.strukt.clone(),
+            Value::Instance(i) => i.ty.clone(),
+            Value::List(_) => self.builtins.list.clone(),
+            Value::UserFunc(_) => self.builtins.func.clone(),
+        }
     }
 
     pub(crate) fn run_program(&mut self, program: &ast::Program) -> Result<(), RuntimeError> {

@@ -1,0 +1,10 @@
+struct A {}
+if let x: A = A() {
+    println("A ok");
+}
+if let x: Nil = nil {
+    println("B ok");
+}
+if let x: Str = 1 {
+    println("C fail");
+}
