@@ -1,22 +1,18 @@
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Hash, Clone, Copy)]
 pub struct Pos {
-    line: u32,
-    col: u32,
+    // line: u32,
+    // col: u32,
     src_offset: u32,
 }
 
 impl Pos {
-    pub const START: Pos = Pos { line: 1, col: 1, src_offset: 0 };
+    pub const START: Pos = Pos { src_offset: 0 };
+
+    pub fn new(src_offset: u32) -> Pos {
+        Pos { src_offset }
+    }
 
     pub(crate) fn plus_text(mut self, text: &str) -> Pos {
-        for ch in text.chars() {
-            if ch == '\n' {
-                self.line += 1;
-                self.col = 1;
-            } else {
-                self.col += 1;
-            }
-        }
         self.src_offset += text.len() as u32;
         self
     }
@@ -26,7 +22,7 @@ impl Pos {
         self.plus_text(c.encode_utf8(&mut buf))
     }
 
-    pub(crate) fn source_pos(self) -> usize {
+    pub fn source_pos(self) -> usize {
         self.src_offset as usize
     }
 }
@@ -38,7 +34,7 @@ pub struct Span {
 }
 
 impl Span {
-    pub(crate) fn new(start: Pos, end: Pos) -> Span {
+    pub fn new(start: Pos, end: Pos) -> Span {
         Span { start, end }
     }
 
@@ -49,8 +45,12 @@ impl Span {
         }
     }
 
-    pub fn start_line(self) -> u32 {
-        self.start.line
+    pub fn start(self) -> Pos {
+        self.start
+    }
+
+    pub fn end(self) -> Pos {
+        self.end
     }
 
     pub fn source_range(self) -> std::ops::Range<usize> {

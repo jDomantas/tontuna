@@ -25,6 +25,11 @@ fn main() {
         std::process::exit(1);
     });
 
+    for tok in tontuna::tokens(&source) {
+        println!("{:?}", tok);
+    }
+    return;
+
     let ast = match tontuna::parse(&source) {
         Ok(ast) => ast,
         Err(e) => {

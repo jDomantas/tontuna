@@ -2,4 +2,5 @@
 members = [
     "test-runner",
     "tontuna",
+    "tontuna-lsp",
 ]

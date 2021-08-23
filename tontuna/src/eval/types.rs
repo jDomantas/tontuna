@@ -1,6 +1,6 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
-use crate::ast;
+use crate::{ast, Source};
 use super::{Env, Value};
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone)]
@@ -51,7 +51,7 @@ impl std::fmt::Display for Str {
 
 pub(crate) struct NativeFunc {
     pub(crate) name: String,
-    pub(crate) f: Box<dyn Fn(&Rc<str>, &[Value]) -> Result<Value, String>>,
+    pub(crate) f: Box<dyn Fn(&Rc<Source>, &[Value]) -> Result<Value, String>>,
 }
 
 impl NativeFunc {
@@ -67,7 +67,7 @@ impl NativeFunc {
 
     pub(crate) fn new_src_hack(
         name: impl Into<String>,
-        f: impl Fn(Rc<str>) -> Result<Value, String> + 'static,
+        f: impl Fn(Rc<Source>) -> Result<Value, String> + 'static,
     ) -> NativeFunc {
         let name = name.into();
         NativeFunc {
@@ -183,7 +183,7 @@ impl List {
 }
 
 pub(crate) struct Stmt {
-    pub(crate) source: Rc<str>,
+    pub(crate) source: Rc<Source>,
     pub(crate) ast: Rc<ast::Stmt>,
 }
 
@@ -207,7 +207,7 @@ impl Stmt {
         match field {
             "text" => {
                 let span = self.ast.span();
-                let text = &self.source[span.source_range()];
+                let text = &self.source.text[span.source_range()];
                 Some(Value::Str(Rc::new(Str::new(text))))
             }
             "children" => {
@@ -224,7 +224,7 @@ pub(crate) struct Interpreter {
 }
 
 impl Interpreter {
-    pub(crate) fn new(src: Rc<str>) -> Value {
+    pub(crate) fn new(src: Rc<Source>) -> Value {
         let eval = super::Evaluator::new(src, None, Box::new(std::io::sink()));
         let env = eval.globals.clone();
         Value::Interpreter(Rc::new(Interpreter {
@@ -237,8 +237,9 @@ impl Interpreter {
         match field {
             "run" => {
                 let as_value = as_value.clone();
+                let source = self.eval.borrow().source.clone();
                 Some(Value::NativeFunc(Rc::new(NativeFunc::new1("run", move |val| {
-                    super::intrinsics::interpreter_run(&as_value, val)
+                    super::intrinsics::interpreter_run(&source, &as_value, val)
                 }))))
             }
             _ => None,

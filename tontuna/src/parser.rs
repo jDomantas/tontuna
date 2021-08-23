@@ -2,16 +2,10 @@ use std::rc::Rc;
 
 use crate::{
     ast::{self, TokenKind},
+    Error,
     Pos,
     Span,
 };
-
-// #[derive(Debug)]
-// pub(crate) struct Error {
-//     pub(crate) span: Span,
-//     pub(crate) message: String,
-// }
-use crate::Error;
 
 type Result<T> = std::result::Result<T, Error>;
 
@@ -135,7 +129,7 @@ impl<'a> Line<'a> {
     }
 }
 
-pub(crate) fn parse(source: &str) -> Result<ast::Program> {
+fn split_lines(source: &str) -> Result<(Vec<Line<'_>>, Marker)> {
     let first_marker = detect_first_marker_type(source)?;
     let mut lines = Vec::new();
     let mut pos = Pos::START;
@@ -143,6 +137,56 @@ pub(crate) fn parse(source: &str) -> Result<ast::Program> {
         lines.push(Line::new(pos, line, first_marker));
         pos = pos.plus_text(line);
     }
+    Ok((lines, first_marker))
+}
+
+pub(crate) fn tokens(source: &str) -> impl Iterator<Item = (TokenKind, Span)> + '_ {
+    let (lines, first_marker) = split_lines(source).unwrap_or((Vec::new(), Marker::Comment));
+    lines.into_iter().flat_map(move |line| line_tokens(line, first_marker))
+}
+
+fn line_tokens(mut line: Line<'_>, mut marker: Marker) -> impl Iterator<Item = (TokenKind, Span)> + '_ {
+    std::iter::from_fn(move || {
+        let start = line.start_pos;
+        match marker {
+            Marker::Code if line.levels == 0 => {
+                if line.text.len() == 0 {
+                    None
+                } else {
+                    line.text = line.text.trim_end();
+                    let end = start.plus_text(line.text);
+                    let tok = (TokenKind::CommentText, Span { start, end });
+                    line = line.end();
+                    Some(tok)
+                }
+            }
+            Marker::Code => {
+                let (tok, rest) = line.strip_one_marker();
+                marker = Marker::Comment;
+                line = rest;
+                Some((TokenKind::CodeMarker, tok.span))
+            }
+            Marker::Comment if line.levels == 0 => {
+                let (kind, len) = crate::lexer::next_token(&line.text)?;
+                let text = &line.text[..len];
+                let end = start.plus_text(text);
+                let tok = (kind, Span { start, end});
+                line.text = &line.text[len..];
+                line.start_pos = end;
+                Some(tok)
+            }
+            Marker::Comment => {
+                let (tok, rest) = line.strip_one_marker();
+                marker = Marker::Code;
+                line = rest;
+                Some((TokenKind::CommentMarker, tok.span))
+            }
+        }
+    })
+}
+
+pub(crate) fn parse(source: &str) -> Result<ast::Program> {
+    let (lines, first_marker) = split_lines(source)?;
     match first_marker {
         Marker::Comment => {
             let code = parse_code(source, &lines)?;

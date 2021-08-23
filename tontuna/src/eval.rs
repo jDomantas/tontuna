@@ -2,7 +2,7 @@ mod intrinsics;
 mod types;
 
 use std::{cell::RefCell, collections::HashMap, io::Write, rc::Rc};
-use crate::{ast::{self, TokenKind}, Span};
+use crate::{ast::{self, TokenKind}, Source, Span};
 use self::types::{Instance, Interpreter, List, NativeFunc, Stmt, Str, Struct, UserFunc};
 
 #[derive(Clone)]
@@ -281,14 +281,14 @@ impl BuiltinTypes {
 }
 
 pub(crate) struct Evaluator {
-    source: Rc<str>,
+    source: Rc<Source>,
     globals: Env,
     call_stack_size: u64,
     builtins: BuiltinTypes,
 }
 
 impl Evaluator {
-    pub(crate) fn new(source: Rc<str>, program: Option<&ast::Program>, output: Box<dyn Write>) -> Evaluator {
+    pub(crate) fn new(source: Rc<Source>, program: Option<&ast::Program>, output: Box<dyn Write>) -> Evaluator {
         let mut globals = HashMap::new();
         let output = Rc::new(RefCell::new(output));
         let output2 = output.clone();
@@ -663,7 +663,7 @@ impl Evaluator {
     }
 
     fn token_source(&self, token: ast::Token) -> &str {
-        &self.source[token.span.source_range()]
+        &self.source.text[token.span.source_range()]
     }
 
     fn value_type(&self, value: &Value) -> Rc<Struct> {

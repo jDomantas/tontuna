@@ -1,1 +1,4 @@
 target/
+tontuna-vscode/node_modules/
+tontuna-vscode/out/
+**/*.vsix

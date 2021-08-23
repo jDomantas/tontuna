@@ -1,7 +1,7 @@
 use std::io::Write;
 use std::rc::Rc;
 use std::cmp::Ordering;
-use crate::ast;
+use crate::{ast, Source};
 use super::Value;
 
 fn compare(lhs: &Value, rhs: &Value) -> Option<Ordering> {
@@ -281,7 +281,7 @@ pub(super) fn stmt_children(stmt: &super::Stmt) -> Value {
     )))
 }
 
-pub(super) fn interpreter_run(inp: &Value, stmt: &Value) -> Result<Value, String> {
+pub(super) fn interpreter_run(source: &Source, inp: &Value, stmt: &Value) -> Result<Value, String> {
     let i = match inp {
         Value::Interpreter(inp) => inp,
         other => return Err(format!(
@@ -308,7 +308,7 @@ pub(super) fn interpreter_run(inp: &Value, stmt: &Value) -> Result<Value, String
         Err(super::EvalStop::Error(err)) => {
             let message = format!(
                 "runtime error on line {}: {}",
-                err.span.unwrap().start_line(),
+                source.span_start_line(err.span.unwrap()),
                 err.message,
             );
             Ok(Value::Str(Rc::new(super::Str::new(&message))))
