@@ -93,6 +93,7 @@ fn split_lines(text) {
     while idx < text.len {
         if text.get(idx) == "\n" {
             let line = text.substring(last_start, idx - last_start);
+            line = remove_suffix(line, "\r");
             lines.push(line);
             last_start = idx + 1;
         }
@@ -108,6 +109,15 @@ fn starts_with(haystack, needle) {
     }
     let start = haystack.substring(0, needle.len);
     return start == needle;
+}
+
+# Returns if `needle` is a suffix of `haystack`.
+fn ends_with(haystack, needle) {
+    if haystack.len < needle.len {
+        return false;
+    }
+    let end = haystack.substring(haystack.len - needle.len, needle.len);
+    return end == needle;
 }
 
 # Removes all occurences of a given char from a string.
@@ -129,6 +139,16 @@ fn remove(text, to_remove) {
 fn remove_prefix(text, prefix) {
     if starts_with(text, prefix) {
         return text.substring(prefix.len, text.len - prefix.len);
+    } else {
+        return text;
+    }
+}
+
+# Removes suffix from the string if it starts with the
+# suffix, leaves the text unchanged otherwise.
+fn remove_suffix(text, suffix) {
+    if ends_with(text, suffix) {
+        return text.substring(0, text.len - suffix.len);
     } else {
         return text;
     }

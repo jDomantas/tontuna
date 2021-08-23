@@ -25,8 +25,6 @@ fn main() {
         std::process::exit(1);
     });
 
-    let source = source.replace("\r\n", "\n");
-
     let ast = match tontuna::parse(&source) {
         Ok(ast) => ast,
         Err(e) => {

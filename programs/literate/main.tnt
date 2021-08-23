@@ -38,10 +38,15 @@ appropriate emitting functions:
 > }
 
 Now we need the two functions for formatting code and comments. For comments
-there's not much to do, we just print out the text:
+there's not much to do, we just print out the text. We won't just do a direct
+`print(comment.text)` because that would keep text with whatever style newlines
+(windows or unix) were in the original file, whereas we're printing unix style
+newlines everywhere else.
 
 > fn emit_comment(comment) {
->     println(comment.text);
+>     for line in split_lines(comment.text) {
+>         println(line);
+>     }
 > }
 
 For code the situation is a bit more complicated. If we get the text for the
@@ -75,6 +80,9 @@ Here's the first helper function, that splits a string into separate lines:
 >     while idx < text.len {
 >         if text.get(idx) == "\n" {
 >             let line = text.substring(last_start, idx - last_start);
+>             if line.len > 0 && line.get(line.len - 1) == "\r" {
+>                 line = line.substring(0, line.len - 1);
+>             }
 >             lines.push(line);
 >             last_start = idx + 1;
 >         }

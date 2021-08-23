@@ -72,17 +72,16 @@ fn check_program_run(
 ) {
     let source = std::fs::read_to_string(path)
         .expect(&format!("failed to read {:?}", path));
-    let source = source.replace("\r\n", "\n");
     let stdout = match stdout_path {
         Some(path) => std::fs::read_to_string(path)
             .expect(&format!("failed to read {:?}", path))
-            .replace('\r', ""),
+            .replace("\r\n", "\n"),
         None => "".to_owned(),
     };
     let stderr = match stderr_path {
         Some(path) => std::fs::read_to_string(path)
             .expect(&format!("failed to read {:?}", path))
-            .replace('\r', ""),
+            .replace("\r\n", "\n"),
         None => "".to_owned(),
     };
     let (actual_out, actual_err) = do_run(&source);

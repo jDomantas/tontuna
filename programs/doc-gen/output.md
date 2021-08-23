@@ -62,6 +62,13 @@ Returns if `needle` is a prefix of `haystack`.
 
 ---
 
+### Function `ends_with`
+
+Returns if `needle` is a suffix of `haystack`.
+
+
+---
+
 ### Function `remove`
 
 Removes all occurences of a given char from a string.
@@ -73,6 +80,14 @@ Removes all occurences of a given char from a string.
 
 Removes prefix from the string if it starts with the
 prefix, leaves the text unchanged otherwise.
+
+
+---
+
+### Function `remove_suffix`
+
+Removes suffix from the string if it starts with the
+suffix, leaves the text unchanged otherwise.
 
 
 ---

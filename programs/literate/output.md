@@ -17,7 +17,6 @@ For starters, we have our main function that will retrieve the code and invoke
 formatting implementation. And also print out a header because I felt like
 including something extra in here. Here you go:
 
-
 ```rust
 fn main() {
     println("# Literate mode!");
@@ -32,7 +31,6 @@ text directly to markdown, and code will be emitted as code blocks. Here's a
 function that iterates over the elements in the source and dispatches to
 appropriate emitting functions:
 
-
 ```rust
 fn emit_markdown(code) {
     for item in code {
@@ -46,12 +44,16 @@ fn emit_markdown(code) {
 ```
 
 Now we need the two functions for formatting code and comments. For comments
-there's not much to do, we just print out the text:
-
+there's not much to do, we just print out the text. We won't just do a direct
+`print(comment.text)` because that would keep text with whatever style newlines
+(windows or unix) were in the original file, whereas we're printing unix style
+newlines everywhere else.
 
 ```rust
 fn emit_comment(comment) {
-    println(comment.text);
+    for line in split_lines(comment.text) {
+        println(line);
+    }
 }
 ```
 
@@ -67,7 +69,6 @@ line won't have the prefix and remain unchanged).
 Also we'll pretend that this is Rust code because the languages are
 syntactically similar enough to give us decent syntax highlighting.
 
-
 ```rust
 fn emit_code(code) {
     println("```rust");
@@ -82,7 +83,6 @@ fn emit_code(code) {
 
 Here's the first helper function, that splits a string into separate lines:
 
-
 ```rust
 fn split_lines(text) {
     let lines = List();
@@ -91,6 +91,9 @@ fn split_lines(text) {
     while idx < text.len {
         if text.get(idx) == "\n" {
             let line = text.substring(last_start, idx - last_start);
+            if line.len > 0 && line.get(line.len - 1) == "\r" {
+                line = line.substring(0, line.len - 1);
+            }
             lines.push(line);
             last_start = idx + 1;
         }
@@ -105,7 +108,6 @@ fn split_lines(text) {
 ```
 
 And the second one, to strip the prefix if the line starts with it:
-
 
 ```rust
 fn strip_prefix(line, prefix) {
@@ -127,7 +129,6 @@ render that one and it will probably be more pleasant to read that this
 monospaced wall of text.
 
 And let's not forget to actually run this:
-
 
 ```rust
 main();
