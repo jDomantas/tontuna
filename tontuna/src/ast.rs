@@ -175,15 +175,6 @@ pub(crate) enum IfCond {
     },
 }
 
-impl IfCond {
-    pub(crate) fn span(&self) -> Span {
-        match self {
-            IfCond::Expr(e) => e.span(),
-            IfCond::TypeTest { let_tok, name, colon, ty, eq, value } => let_tok.span.merge(value.span()),
-        }
-    }
-}
-
 #[derive(Debug, Clone)]
 pub(crate) enum IfTail {
     None,

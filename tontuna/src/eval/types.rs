@@ -124,38 +124,12 @@ impl NativeFunc {
             }),
         }
     }
-
-    pub(crate) fn new3(
-        name: impl Into<String>,
-        f: impl Fn(&Value, &Value, &Value) -> Result<Value, String> + 'static,
-    ) -> NativeFunc {
-        let name = name.into();
-        NativeFunc {
-            name: name.clone(),
-            f: Box::new(move |_, values| {
-                match values {
-                    [a, b, c] => f(a, b, c),
-                    _ => Err(format!(
-                        "{} expects 3 arguments, got {}",
-                        name,
-                        values.len(),
-                    )),
-                }
-            }),
-        }
-    }
 }
 
 pub(crate) struct UserFunc {
     pub(crate) name: String,
     pub(crate) def: Rc<ast::FnDef>,
     pub(crate) env: Env,
-}
-
-impl UserFunc {
-    pub(crate) fn new(name: String, def: Rc<ast::FnDef>, env: Env) -> UserFunc {
-        UserFunc { name, def, env }
-    }
 }
 
 pub(crate) struct Struct {
@@ -229,7 +203,7 @@ impl Stmt {
         }
     }
 
-    pub(crate) fn lookup_field(&self, as_value: &Value, field: &str) -> Option<Value> {
+    pub(crate) fn lookup_field(&self, field: &str) -> Option<Value> {
         match field {
             "text" => {
                 let span = self.ast.span();
@@ -237,7 +211,6 @@ impl Stmt {
                 Some(Value::Str(Rc::new(Str::new(text))))
             }
             "children" => {
-                let as_value = as_value.clone();
                 Some(super::intrinsics::stmt_children(self))
             }
             _ => None,

@@ -73,7 +73,7 @@ impl Value {
             Value::Str(s) => s.lookup_field(self, field),
             Value::Instance(i) => i.lookup_field(field),
             Value::List(l) => l.lookup_field(self, field),
-            Value::Stmt(s) => s.lookup_field(self, field),
+            Value::Stmt(s) => s.lookup_field(field),
             Value::Interpreter(s) => s.lookup_field(self, field),
             _ => None,
         }
@@ -85,7 +85,7 @@ impl Value {
             Value::Instance(i) => Ok(i.set_field(field, value)),
             Value::List(_) => Err("List fields cannot be modified".to_owned()),
             Value::Stmt(s) if s.is_code() => Err("Code fields cannot be modified".to_owned()),
-            Value::Stmt(s) => Err("Comment fields cannot be modified".to_owned()),
+            Value::Stmt(_) => Err("Comment fields cannot be modified".to_owned()),
             Value::Interpreter(_) => Err("Interpreter fields cannot be modified".to_owned()),
             _ => Err(format!("{} cannot have fields", self.type_name())),
         }
@@ -492,7 +492,7 @@ impl Evaluator {
             ast::Expr::Bool { value, .. } => Ok((*value).into()),
             ast::Expr::Str { value, .. } => Ok(value.as_str().into()),
             ast::Expr::Nil { .. } => Ok(Value::Nil),
-            ast::Expr::SelfExpr { tok } => todo!(),
+            ast::Expr::SelfExpr { .. } => todo!(),
             ast::Expr::Call { func, args, .. } => {
                 let func = self.eval_expr(func, env)?;
                 let mut eval_args = || -> Result<Vec<Value>, RuntimeError> {

@@ -109,16 +109,6 @@ impl<'a> Line<'a> {
         Line { start_pos, text, levels }
     }
 
-    fn leading_marker(&self, level: u32) -> ast::Token {
-        assert!(self.levels != 0);
-        let (kind, offset) = find_leading_marker(self.text).unwrap();
-        let span = Span::new(
-            self.start_pos.plus_text(&self.text[..offset]),
-            self.start_pos.plus_text(&self.text[..(offset + 1)]),
-        );
-        ast::Token { span, kind: kind.into_token_kind() }
-    }
-
     fn strip_one_marker(&self) -> (ast::Token, Line<'a>) {
         assert!(self.levels != 0);
         let (kind, offset) = find_leading_marker(self.text).unwrap();
@@ -401,7 +391,6 @@ impl<'a, 'src> Parser<'a, 'src> {
         } else {
             self.hints.sort();
             self.hints.dedup();
-            let hints = &self.hints;
             let mut final_hints = Vec::<ParseHint>::new();
             for &hint in &self.hints {
                 if final_hints.iter().all(|h| !h.covers(hint)) {
@@ -791,7 +780,6 @@ enum Prec {
     AddSub,
     MulDiv,
     CallField,
-    Atom,
 }
 
 fn binop_prec(token: TokenKind) -> Option<(Prec, Prec)> {

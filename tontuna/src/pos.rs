@@ -8,10 +8,6 @@ pub struct Pos {
 impl Pos {
     pub const START: Pos = Pos { line: 1, col: 1, src_offset: 0 };
 
-    pub(crate) fn new(line: u32, col: u32, src_offset: u32) -> Pos {
-        Pos { line, col, src_offset }
-    }
-
     pub(crate) fn plus_text(mut self, text: &str) -> Pos {
         for ch in text.chars() {
             if ch == '\n' {
@@ -44,14 +40,6 @@ pub struct Span {
 impl Span {
     pub(crate) fn new(start: Pos, end: Pos) -> Span {
         Span { start, end }
-    }
-
-    pub(crate) fn start(self) -> Pos {
-        self.start
-    }
-
-    pub(crate) fn end(self) -> Pos {
-        self.end
     }
 
     pub(crate) fn merge(self, other: Span) -> Span {

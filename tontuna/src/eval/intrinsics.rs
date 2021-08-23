@@ -78,7 +78,7 @@ pub(super) fn mul(lhs: &Value, rhs: &Value) -> Result<Value, String> {
 
 pub(super) fn div(lhs: &Value, rhs: &Value) -> Result<Value, String> {
     match (lhs, rhs) {
-        (Value::Int(a), Value::Int(0)) => Err("division by zero".into()),
+        (Value::Int(_), Value::Int(0)) => Err("division by zero".into()),
         (Value::Int(a), Value::Int(b)) => Ok(Value::Int(a / b)),
         (_, _) => Err(format!("can't divide {} and {}", lhs.type_name(), rhs.type_name())),
     }
@@ -232,7 +232,7 @@ pub(super) fn invalid_ctor() -> String {
 pub(super) fn stmt_children(stmt: &super::Stmt) -> Value {
     let children: Vec<Rc<ast::Stmt>> = match &*stmt.ast {
         ast::Stmt::While { body, .. } => body.contents.stmts.clone(),
-        ast::Stmt::If { if_tok, cond, body, tail } => {
+        ast::Stmt::If { body, tail, .. } => {
             let mut children = body.contents.stmts.clone();
             let mut tail: &ast::IfTail = tail;
             loop {
