@@ -125,7 +125,7 @@ pub(crate) enum Stmt {
     },
     Return {
         ret: Token,
-        value: Expr,
+        value: Option<Expr>,
         semi: Token,
     },
     Let {

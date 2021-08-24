@@ -24,7 +24,7 @@ fn test_comment(comment) {
             let err = interpreter.run(code);
             if err != nil {
                 println("doc test failed: ", err);
-                return nil;
+                return;
             }
         }
     }

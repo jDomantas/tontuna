@@ -396,8 +396,12 @@ impl Evaluator {
                         span: Some(ret.span),
                     }));
                 }
-                let value = self.eval_expr(value, env)?;
-                return Err(EvalStop::Return(value));
+                if let Some(value) = value {
+                    let value = self.eval_expr(value, env)?;
+                    return Err(EvalStop::Return(value));
+                } else {
+                    return Err(EvalStop::Return(Value::Nil));
+                }
             }
             ast::Stmt::Let { name, value, .. } => {
                 let value = self.eval_expr(value, env)?;

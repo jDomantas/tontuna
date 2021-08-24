@@ -563,9 +563,13 @@ impl<'a, 'src> Parser<'a, 'src> {
         } else if let Some(fn_tok) = self.check(TokenKind::Fn) {
             Ok(ast::Stmt::FnDef(Rc::new(self.parse_fn_def(fn_tok)?)))
         } else if let Some(ret) = self.check(TokenKind::Return) {
-            let value = self.parse_expr(Prec::Min)?;
-            let semi = self.expect(TokenKind::Semicolon)?;
-            Ok(ast::Stmt::Return { ret, value, semi })
+            if let Some(semi) = self.check(TokenKind::Semicolon) {
+                Ok(ast::Stmt::Return { ret, value: None, semi })
+            } else {
+                let value = self.parse_expr(Prec::Min)?;
+                let semi = self.expect(TokenKind::Semicolon)?;
+                Ok(ast::Stmt::Return { ret, value: Some(value), semi })
+            }
         } else if self.peek() == Some(TokenKind::CommentMarker) {
             if self.current_line.levels == 0 {
                 return Err(Error {
