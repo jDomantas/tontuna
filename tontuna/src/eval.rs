@@ -567,6 +567,19 @@ impl Evaluator {
                 }
             }
             ast::Expr::Paren { inner, .. } => self.eval_expr(inner, env),
+            ast::Expr::PrefixOp { operator, arg } => {
+                match operator.kind {
+                    TokenKind::Bang => return Ok((!self.eval_cond(arg, env)?).into()),
+                    TokenKind::Minus => {
+                        let arg = self.eval_expr(arg, env)?;
+                        intrinsics::negate(&arg).map_err(|message| RuntimeError {
+                            message,
+                            span: Some(expr.span()),
+                        })
+                    }
+                    x => panic!("invalid prefix operator: {:?}", x),
+                }
+            }
             ast::Expr::BinOp { lhs, operator, rhs } => {
                 match operator.kind {
                     TokenKind::And => {

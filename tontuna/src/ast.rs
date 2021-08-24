@@ -43,6 +43,10 @@ pub(crate) enum Expr {
         inner: Box<Expr>,
         right_paren: Token,
     },
+    PrefixOp {
+        operator: Token,
+        arg: Box<Expr>,
+    },
     BinOp {
         lhs: Box<Expr>,
         operator: Token,
@@ -78,6 +82,7 @@ impl Expr {
             Expr::SelfExpr { tok } => tok.span,
             Expr::Call { func, right_paren, .. } => func.span().merge(right_paren.span),
             Expr::Paren { left_paren, right_paren, .. } => left_paren.span.merge(right_paren.span),
+            Expr::PrefixOp { operator, arg } => operator.span.merge(arg.span()),
             Expr::BinOp { lhs, rhs, .. } => lhs.span().merge(rhs.span()),
             Expr::Field { obj, field, .. } => obj.span().merge(field.span),
             Expr::AssignVar { name, value, .. } => name.span.merge(value.span()),

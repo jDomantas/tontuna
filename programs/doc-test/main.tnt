@@ -55,7 +55,7 @@ fn prepare_interpreter() {
 # Checks if a string has another string as its prefix.
 # Examples:
 # > assert(starts_with("foobar", "foo"), "starts with test 1");
-# > assert(not(starts_with("baz", "bo"), "starts with test 2"));
+# > assert(!starts_with("baz", "bo"), "starts with test 2");
 fn starts_with(text, prefix) {
     if text.len < prefix.len {
         return false;
@@ -68,20 +68,8 @@ fn starts_with(text, prefix) {
 # Example:
 # > assert(1 < 2, "arithmetic is not broken");
 fn assert(condition, message) {
-    if not(condition) {
+    if !condition {
         panic(message);
-    }
-}
-
-# Because I forgot to add the operator.
-# > if not(true) {
-# >     panic("it's broken");    
-# > }
-fn not(b) {
-    if b {
-        return false;
-    } else {
-        return true;
     }
 }
 

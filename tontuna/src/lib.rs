@@ -82,6 +82,7 @@ impl TokenKind {
             crate::lexer::TokenKind::Equals |
             crate::lexer::TokenKind::And |
             crate::lexer::TokenKind::Or |
+            crate::lexer::TokenKind::Bang |
             crate::lexer::TokenKind::Plus |
             crate::lexer::TokenKind::Minus |
             crate::lexer::TokenKind::Star |
@@ -111,13 +112,13 @@ impl TokenKind {
 }
 
 #[derive(Debug)]
-struct Source {
+pub struct Source {
     text: String,
     line_starts: Vec<usize>,
 }
 
 impl Source {
-    fn new(source: String) -> Source {
+    pub fn new(source: String) -> Source {
         let mut line_starts = vec![0];
         line_starts.extend(source
             .char_indices()
@@ -125,7 +126,7 @@ impl Source {
         Source { text: source, line_starts }
     }
 
-    fn span_start_line(&self, span: Span) -> u32 {
+    pub fn span_start_line(&self, span: Span) -> u32 {
         match self.line_starts.binary_search(&span.start.source_pos()) {
             Ok(idx) => idx as u32 + 1,
             Err(idx) => idx as u32,

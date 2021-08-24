@@ -84,6 +84,13 @@ pub(super) fn div(lhs: &Value, rhs: &Value) -> Result<Value, String> {
     }
 }
 
+pub(super) fn negate(arg: &Value) -> Result<Value, String> {
+    match arg {
+        Value::Int(x) => Ok((-x).into()),
+        _ => Err(format!("can't negate {}", arg.type_name())),
+    }
+}
+
 pub(super) fn print(values: &[Value], output: &mut dyn Write) -> Result<(), String> {
     for value in values {
         do_write(output, value.stringify().as_bytes())?;

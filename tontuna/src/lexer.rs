@@ -40,6 +40,8 @@ pub(crate) enum TokenKind {
     And,
     #[token("||")]
     Or,
+    #[token("!")]
+    Bang,
     #[token("+")]
     Plus,
     #[token("-")]
@@ -110,6 +112,7 @@ impl TokenKind {
             TokenKind::Equals => "`=`",
             TokenKind::And => "`&&`",
             TokenKind::Or => "`||`",
+            TokenKind::Bang => "`!`",
             TokenKind::Plus => "`+`",
             TokenKind::Minus => "`-`",
             TokenKind::Star => "`*`",

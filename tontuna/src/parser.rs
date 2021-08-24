@@ -655,11 +655,9 @@ impl<'a, 'src> Parser<'a, 'src> {
 
     fn parse_expr(&mut self, min_prec: Prec) -> Result<ast::Expr> {
         self.hint(ParseHint::Expr);
-        let mut expr = self.parse_atom_expr()?;
+        let mut expr = self.parse_operand_expr()?;
         while let Some(kind) = self.peek() {
             self.hint(ParseHint::Operator);
-            self.hint(ParseHint::Token(TokenKind::Dot));
-            self.hint(ParseHint::Token(TokenKind::LeftParen));
             match binop_prec(kind) {
                 Some((prec, rhs_prec)) if prec >= min_prec => {
                     let operator = self.expect(kind).unwrap();
@@ -698,17 +696,37 @@ impl<'a, 'src> Parser<'a, 'src> {
                     }
                 }
                 Some(_) => break,
-                None if kind == TokenKind::Dot && Prec::CallField >= min_prec => {
-                    let dot = self.expect(TokenKind::Dot).unwrap();
+                _ => break,
+            }
+        }
+        Ok(expr)
+    }
+
+    fn parse_operand_expr(&mut self) -> Result<ast::Expr> {
+        self.hint(ParseHint::Expr);
+        if let Some(operator) = self.check(TokenKind::Minus) {
+            let arg = self.parse_operand_expr()?;
+            Ok(ast::Expr::PrefixOp {
+                operator,
+                arg: Box::new(arg),
+            })
+        } else if let Some(operator) = self.check(TokenKind::Bang) {
+            let arg = self.parse_operand_expr()?;
+            Ok(ast::Expr::PrefixOp {
+                operator,
+                arg: Box::new(arg),
+            })
+        } else {
+            let mut expr = self.parse_atom_expr()?;
+            loop {
+                if let Some(dot) = self.check(TokenKind::Dot) {
                     let field = self.expect(TokenKind::Name)?;
                     expr = ast::Expr::Field {
                         obj: Box::new(expr),
                         dot,
                         field,
                     };
-                }
-                None if kind == TokenKind::LeftParen && Prec::CallField >= min_prec => {
-                    let left_paren = self.expect(TokenKind::LeftParen).unwrap();
+                } else if let Some(left_paren) = self.check(TokenKind::LeftParen) {
                     let args = self.parse_list(|p| p.parse_expr(Prec::Min))?;
                     let right_paren = self.expect(TokenKind::RightParen)?;
                     expr = ast::Expr::Call {
@@ -717,11 +735,11 @@ impl<'a, 'src> Parser<'a, 'src> {
                         args,
                         right_paren,
                     };
+                } else {
+                    break Ok(expr);
                 }
-                _ => break,
             }
         }
-        Ok(expr)
     }
 
     fn parse_list<T>(&mut self, parse_item: impl Fn(&mut Self) -> Result<T>) -> Result<ast::CommaList<T>> {

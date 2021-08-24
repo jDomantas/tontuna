@@ -47,11 +47,12 @@ impl Write for SharedSink {
 }
 
 fn do_run(source: &str) -> (String, String) {
+    let src = tontuna::Source::new(source.to_owned());
     let ast = match tontuna::parse(source) {
         Ok(ast) => ast,
         Err(e) => return (
             "".to_owned(),
-            format!("parse error at line {}: {}", e.span.start_line(), e.message),
+            format!("parse error at line {}: {}", src.span_start_line(e.span), e.message),
         ),
     };
     let output = SharedSink {
@@ -59,7 +60,7 @@ fn do_run(source: &str) -> (String, String) {
     };
     let stderr = match tontuna::eval(&ast, Box::new(output.clone())) {
         Ok(()) => "".to_owned(),
-        Err(e) => format!("runtime error at line {}: {}", e.span.start_line(), e.message),
+        Err(e) => format!("runtime error at line {}: {}", src.span_start_line(e.span), e.message),
     };
     let stdout: String = output.result.borrow().clone();
     (stdout, stderr)
